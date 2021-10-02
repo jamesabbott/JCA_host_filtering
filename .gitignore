@@ -2,3 +2,6 @@
 bwa/
 reference
 logs
+fastq
+bwa_alignments
+filtered_fastq
