@@ -1,0 +1,77 @@
+---
+title: "Host filtering"
+author: "James Abbott"
+date: "04/10/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+library(DESeq2)
+library(tidyverse)
+knitr::opts_chunk$set(echo = TRUE)
+opts_knit$set(root.dir = "/cluster/db/jabbott/host_filtering/")
+```
+
+```{r dataprep}
+get_counts<-function(headname) {
+  name_parts<-(strsplit(headname,'\\.'))[[1]]
+  
+  if (name_parts[[1]]=='pre') {
+    dir='nt_unfiltered'
+  } else {
+    dir='nt_morex3'
+  }
+  
+  path=file.path('kraken',dir,paste0(name_parts[[2]],'.report.txt'))
+  
+  df<-read.csv(path,sep="\t",col.names=c('prop',headname,'count','rank','taxid','taxa')) %>% 
+    filter(rank=='G') %>%
+    select(taxa,headname)
+    
+  return(df)
+}
+
+# just interested in bulk and elite here, but will pick them pre and post filtering
+bulk_samples=c('pre.2000','pre.2001','pre.2002','post.2000','post.2001','post.2002')
+elite_samples=c('pre.2023','pre.2024','pre.2025','post.2023','post.2024','post.2025')
+
+bulk_df<-lapply(bulk_samples, get_counts) %>%
+  reduce(left_join,by='taxa') %>%
+  replace(is.na(.),0) %>%
+  column_to_rownames('taxa')
+
+elite_df<-lapply(elite_samples,get_counts) %>%
+  reduce(left_join,by='taxa') %>%
+  replace(is.na(.),0) %>%
+  column_to_rownames('taxa')
+```
+
+```{r}
+bulk_counts<-as.matrix(bulk_df)
+condition=factor(c(rep('pre',3),c(rep('post',3))))
+coldata<-data.frame(row.names=colnames(bulk_counts),condition)
+
+dds<-DESeqDataSetFromMatrix(countData=bulk_counts,colData=coldata,design= ~ condition)
+dds<-DESeq(dds)
+plotDispEsts(dds, main="Dispersion plot")
+rld <- rlogTransformation(dds)
+res<-results(dds,alpha=0.05, contrast=c("condition",'pre','post'))
+summary(res)
+
+bulk_res<-as.data.frame(res)
+bulk_res <- bulk_res[order(bulk_res$log2FoldChange), ] %>%
+  filter(padj <= 0.05)
+
+elite_counts<-as.matrix(elite_df)
+dds<-DESeqDataSetFromMatrix(countData=elite_counts,colData=coldata,design= ~ condition)
+dds<-DESeq(dds)
+plotDispEsts(dds, main="Dispersion plot")
+rld <- rlogTransformation(dds)
+res<-results(dds,alpha=0.05, contrast=c("condition",'pre','post'))
+summary(res)
+
+elite_res<-as.data.frame(res)
+elite_res <- elite_res[order(elite_res$log2FoldChange), ] %>%
+  filter(padj <= 0.05)
+```
