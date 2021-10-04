@@ -58,7 +58,7 @@ sample=${samples[$SGE_TASK_ID-1]}
 readarray -t files < <(ls -1 $in_dir/${sample}*|xargs -i basename {})
 
 mkdir $TMPDIR/kraken_db
-cp -v ${db}/*k2d $TMPDIR/kraken_db
+cp -v ${db}/* $TMPDIR/kraken_db
 cp -v ${in_dir}/${sample}* $TMPDIR
 kraken2 --db $TMPDIR/kraken_db --threads 24 --use-names --report ${out_dir}/${sample}.report.txt \
 	--output ${out_dir}/${sample}.txt --gzip-compressed --paired ${TMPDIR}/${files[0]} ${TMPDIR}/${files[1]}
