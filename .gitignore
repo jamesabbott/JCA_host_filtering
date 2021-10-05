@@ -7,4 +7,5 @@ bwa_alignments
 filtered_fastq
 kraken
 deseq2
+per_genus_fastq
 
