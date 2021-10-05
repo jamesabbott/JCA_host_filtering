@@ -27,7 +27,9 @@ get_counts<-function(headname) {
   
   df<-read.csv(path,sep="\t",col.names=c('prop',headname,'count','rank','taxid','taxa')) %>% 
     filter(rank=='G') %>%
-    select(taxa,headname)
+    select(taxa,taxid,all_of(headname))
+  
+  df$taxa<-trimws(df$taxa,which='left')
     
   return(df)
 }
@@ -39,39 +41,67 @@ elite_samples=c('pre.2023','pre.2024','pre.2025','post.2023','post.2024','post.2
 bulk_df<-lapply(bulk_samples, get_counts) %>%
   reduce(left_join,by='taxa') %>%
   replace(is.na(.),0) %>%
-  column_to_rownames('taxa')
+  column_to_rownames('taxa') %>%
+  select(taxid.x,unlist(bulk_samples))
 
 elite_df<-lapply(elite_samples,get_counts) %>%
   reduce(left_join,by='taxa') %>%
   replace(is.na(.),0) %>%
-  column_to_rownames('taxa')
+  column_to_rownames('taxa') %>%
+  select(taxid.x,unlist(elite_samples))
 ```
 
 ```{r}
-bulk_counts<-as.matrix(bulk_df)
+bulk_counts<-bulk_df %>% 
+  select(-taxid.x) %>% 
+  as.matrix()
 condition=factor(c(rep('pre',3),c(rep('post',3))))
 coldata<-data.frame(row.names=colnames(bulk_counts),condition)
 
 dds<-DESeqDataSetFromMatrix(countData=bulk_counts,colData=coldata,design= ~ condition)
+keep <- rowSums(counts(dds)) >= 50
+dds <- dds[keep,]
 dds<-DESeq(dds)
-plotDispEsts(dds, main="Dispersion plot")
 rld <- rlogTransformation(dds)
 res<-results(dds,alpha=0.05, contrast=c("condition",'pre','post'))
 summary(res)
 
+bulk_df<-rownames_to_column(bulk_df,var='taxa')
 bulk_res<-as.data.frame(res)
 bulk_res <- bulk_res[order(bulk_res$log2FoldChange), ] %>%
-  filter(padj <= 0.05)
+  filter(padj <= 0.05) %>%
+  rownames_to_column(var='taxa') %>%
+  left_join(bulk_df,by='taxa')
 
-elite_counts<-as.matrix(elite_df)
+elite_counts<-elite_df %>%
+  select(-taxid.x) %>%
+  as.matrix()
+  
 dds<-DESeqDataSetFromMatrix(countData=elite_counts,colData=coldata,design= ~ condition)
 dds<-DESeq(dds)
-plotDispEsts(dds, main="Dispersion plot")
+
 rld <- rlogTransformation(dds)
 res<-results(dds,alpha=0.05, contrast=c("condition",'pre','post'))
 summary(res)
 
+elite_df<-rownames_to_column(elite_df,var='taxa')
 elite_res<-as.data.frame(res)
 elite_res <- elite_res[order(elite_res$log2FoldChange), ] %>%
-  filter(padj <= 0.05)
+  filter(padj <= 0.05) %>%
+  rownames_to_column(var='taxa') %>%
+  left_join(elite_df,by='taxa')
+```
+```{r output}
+dir.create('deseq2', showWarnings = FALSE)
+
+bulk_res<-bulk_res %>%
+  relocate('taxid.x',.after = 'taxa') %>%
+  rename('taxid'='taxid.x')
+
+elite_res<-elite_res %>%
+  relocate('taxid.x',.after = 'taxa') %>%
+  rename('taxid'='taxid.x')
+
+write.table(bulk_res,file.path('deseq2','bulk.txt'),sep="\t",quote=FALSE,row.names = FALSE)
+write.table(elite_res,file.path('deseq2','elite.txt'),sep="\t",quote=FALSE,row.names = FALSE)
 ```
