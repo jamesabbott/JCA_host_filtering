@@ -9,4 +9,5 @@ kraken
 deseq2
 per_genus_fastq
 taxonomy
-
+__pycache__
+images

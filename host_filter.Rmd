@@ -9,6 +9,12 @@ output: html_document
 library(knitr)
 library(DESeq2)
 library(tidyverse)
+library(data.table)
+library(ggplot2)
+library(ggthemes)
+library(cowplot)
+library(phyloseq)
+
 knitr::opts_chunk$set(echo = TRUE)
 opts_knit$set(root.dir = "/cluster/db/jabbott/host_filtering/")
 ```
@@ -104,4 +110,60 @@ elite_res<-elite_res %>%
 
 write.table(bulk_res,file.path('deseq2','bulk.txt'),sep="\t",quote=FALSE,row.names = FALSE)
 write.table(elite_res,file.path('deseq2','elite.txt'),sep="\t",quote=FALSE,row.names = FALSE)
+```
+
+## Phyloseq analysis of kraken outputs
+
+Phyloseq reports have been converted into a biom file using kraken-biom, which will hopefully load into phyloseq ok...
+
+```{r phyloseq_prep}
+samples_df<-read.csv('map.txt',header = TRUE,sep="\t")
+row.names(samples_df)<-samples_df$SampleID
+samples<-row.names(samples_df)
+SAM = sample_data(samples_df, errorIfNULL = T)
+ps<-import_biom('kraken/biom/table.biom.gz')
+colnames(tax_table(ps))<-c("Kingdom","Phylum","Class","Order","Family","Genus","Species")
+
+bact_ps<-subset_taxa(ps,Kingdom=='k__Bacteria')
+bact_ps<-prune_samples(samples,bact_ps)
+bact_ps<-phyloseq(otu_table(bact_ps),tax_table(bact_ps),SAM)
+```
+
+```{r abundance_plots}
+glommed<-tax_glom(bact_ps,taxrank='Phylum')
+dat<-data.table(psmelt(glommed))
+dat$Phylum<-as.character(dat$Phylum)
+dat[, median := median(Abundance, na.rm = TRUE), by = "Phylum"]
+# Change name to remainder of Phylum less than arbitrary cutoff to match 1%...
+dat[(median <= 40000), Phylum := "Others"]
+dat$Filtered=factor(dat$Filtered,levels=c('Unfiltered','Filtered'))
+p1 <- ggplot(data=dat, aes(x=Sample, y=Abundance, fill=Phylum)) + geom_bar(aes(), stat="identity", position="stack") +
+  theme_bw() + theme(legend.position = "none", axis.text.x=element_blank())+scale_fill_colorblind() +
+  xlab('')+ylab('Absolute Abundance')+facet_grid(~ Filtered,scales="free",space="free")
+
+
+phy<-transform_sample_counts(bact_ps,function(x) x/sum(x))
+glommed<-tax_glom(phy,taxrank='Phylum')
+dat<-data.table(psmelt(glommed))
+dat$Phylum<-as.character(dat$Phylum)
+dat[, median := median(Abundance, na.rm = TRUE), 
+    by = "Phylum"]
+# Change name to remainder of Phylum less than 1%
+dat[(median <= 0.01), Phylum := "Others < 1% abundance"]
+dat$Filtered=factor(dat$Filtered,levels=c('Unfiltered','Filtered'))
+
+p2 <- ggplot(data=dat, aes(x=Sample, y=Abundance, fill=Phylum)) + geom_bar(aes(), stat="identity", position="stack") +
+  theme_bw() + theme(legend.position='bottom',axis.text.x=element_blank() )+ 
+  scale_fill_colorblind() + xlab('') + ylab('Relative Abundance')+facet_grid(~ Filtered,scales='free',space='free')
+legend<-get_legend(p2)
+p2<-p2 + theme(legend.position = 'none')
+p<-plot_grid(plot_grid(p1,p2,ncol=2),plot_grid(NULL,legend,ncol=1),nrow=2,rel_heights = c(0.75,0.2),greedy=FALSE,align='hv')
+p
+```
+```{r bray_distance}
+distmat<-phyloseq::distance(bact_ps,method='bray')
+mds<-ordinate(bact_ps,"MDS",distance=distmat)
+dist_plot<-plot_ordination(bact_ps,mds,color = 'Filtered',title = 'Bray PCoA')
+dist_plot<-dist_plot+theme_bw()+scale_color_colorblind()
+dist_plot
 ```
