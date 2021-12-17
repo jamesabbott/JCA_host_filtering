@@ -1,0 +1,10 @@
+SampleID	Status
+unfiltered_2000	Unfiltered
+unfiltered_2001	Unfiltered
+unfiltered_2002	Unfiltered
+morex3_aligned_2000	MorexV3 aligned
+morex3_aligned_2001	MorexV3 aligned
+morex3_aligned_2002	MorexV3 aligned
+morex3_unaligned_2000	MorexV3 unaligned
+morex3_unaligned_2001	MorexV3 unaligned
+morex3_unaligned_2002	MorexV3 unaligned

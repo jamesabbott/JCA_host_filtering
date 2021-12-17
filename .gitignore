@@ -2,6 +2,7 @@
 bwa/
 reference
 logs
+job_logs
 fastq
 bwa_alignments
 filtered_fastq

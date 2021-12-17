@@ -1,11 +1,13 @@
 #!/bin/env bash
 
 #$ -pe smp 24
-#$ -mods l_hard mfree 96G
+#$ -mods l_hard mfree 128G
+#$ -mods l_hard local_free 200G
 #$ -j y
 #$ -o logs/$JOB_NAME.$JOB_ID.$TASK_ID
 #$ -cwd
 #$ -t 1-12
+#$ -l h=c6320*
 
 set -e
 
@@ -55,12 +57,20 @@ mkdir -p ${out_dir}
 
 readarray -t samples < <(ls $in_dir|cut -f1 -d_|uniq)
 sample=${samples[$SGE_TASK_ID-1]}
+
 readarray -t files < <(ls -1 $in_dir/${sample}*|xargs -i basename {})
+echo sample=${sample}
+
+df -h
 
 mkdir $TMPDIR/kraken_db
-cp -v ${db}/* $TMPDIR/kraken_db
+cp -v ${db}/*k2d $TMPDIR/kraken_db
 cp -v ${in_dir}/${sample}* $TMPDIR
+ls -l $TMPDIR
+ls -l $TMPDIR/kraken_db
+
+sample=$(echo $sample|sed 's/.filtered//')
 kraken2 --db $TMPDIR/kraken_db --threads 24 --use-names --report ${out_dir}/${sample}.report.txt \
 	--output ${out_dir}/${sample}.txt --gzip-compressed --paired ${TMPDIR}/${files[0]} ${TMPDIR}/${files[1]}
-bracken -d ${TMPDIR}/kraken_db -i ${out_dir}/${sample}.report.txt -o ${out_dir}/${sample}.bracken -r 150 
+#bracken -d ${TMPDIR}/kraken_db -i ${out_dir}/${sample}.report.txt -o ${out_dir}/${sample}.bracken -r 150 
 

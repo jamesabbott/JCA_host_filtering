@@ -12,21 +12,83 @@ library(tidyverse)
 library(data.table)
 library(ggplot2)
 library(ggthemes)
+library(ggsci)
 library(cowplot)
 library(phyloseq)
+library(microshades)
 
 knitr::opts_chunk$set(echo = TRUE)
 opts_knit$set(root.dir = "/cluster/db/jabbott/host_filtering/")
 ```
 
-```{r dataprep}
+A plot of the count of reads discarded under different filtering criteria
+
+```{r filterplot_datapre}
+bulk_fastq_counts<-read.table('bulk_fastq_counts.txt',sep="\t",header = TRUE)
+bulk_fastq_counts['Group']='Bulk'
+bulk_fastq_counts['Replicate']=1:3
+elite_fastq_counts<-read.table('elite_fastq_counts.txt',sep="\t",header = TRUE)
+elite_fastq_counts['Group']='Elite'
+elite_fastq_counts['Replicate']=1:3
+
+merged_fastq_counts=rbind(bulk_fastq_counts,elite_fastq_counts) %>%
+  pivot_longer(!c(Group,Replicate),names_to='Filter')
+
+legend_labels=c('Total reads','Reference mapped','Unmapped','Unmapped + <MapQ20','Unmapped + <MapQ25','Unmapped + <MapQ30')
+merged_fastq_counts$Filter<-factor(merged_fastq_counts$Filter,levels=c('unfiltered','mapped','unmapped','mapq_20','mapq_25','mapq_30'))
+plot<-ggplot(merged_fastq_counts,aes(x=Replicate,y=value,colour=Filter,fill=Filter))+
+  geom_col(position=position_dodge())+
+  scale_fill_startrek(labels=legend_labels)+
+  scale_color_startrek(labels=legend_labels)+
+  theme_bw()+
+  theme(legend.pos='bottom',legend.title=element_blank())+
+  facet_wrap('Group')
+plot
+```
+```{r meanplot}
+merged_fastq_counts<-rbind(bulk_fastq_counts,elite_fastq_counts) %>% 
+  select(-Replicate) %>%
+  pivot_longer(-Group,names_to='Filter')
+
+merged_fastq_counts$Filter<-factor(
+    merged_fastq_counts$Filter,
+    levels=c('unfiltered','mapped','unmapped','mapq_20','mapq_25','mapq_30'))
+count.summary <- merged_fastq_counts %>%
+  group_by(Group, Filter) %>%
+  summarise(
+    sd = as.integer(sd(value)),
+    count = mean(value)
+  )
+
+plot<-ggplot(count.summary,aes(Filter,count)) +
+  geom_col(aes(colour=Group,fill=Group),alpha=0.4,position = position_dodge(0.8), 
+           width = 0.7) +
+  geom_errorbar(
+    aes(ymin = count-sd, ymax = count+sd,colour=Group),
+    position = position_dodge(0.8),width=0.2)+
+  geom_point(data=merged_fastq_counts, 
+              aes(x=Filter,y=value,colour=Group),
+              size=1,position = position_dodge2(0.8)) + 
+  theme_bw()+
+  ylim(0,NA)+
+  scale_color_startrek()+
+  scale_fill_startrek()+
+  theme(legend.position='bottom',
+        legend.title=element_blank(),
+        axis.title.x = element_blank(),
+        axis.title.y = 'Reads')
+plot
+
+```
+
+```{r kraken_dataprep}
 get_counts<-function(headname) {
   name_parts<-(strsplit(headname,'\\.'))[[1]]
   
   if (name_parts[[1]]=='pre') {
     dir='nt_unfiltered'
   } else {
-    dir='nt_morex3'
+    dir='nt_morex3_unaligned'
   }
   
   path=file.path('kraken',dir,paste0(name_parts[[2]],'.report.txt'))
@@ -55,9 +117,28 @@ elite_df<-lapply(elite_samples,get_counts) %>%
   replace(is.na(.),0) %>%
   column_to_rownames('taxa') %>%
   select(taxid.x,unlist(elite_samples))
+
+phylum_scale_4 = scale_fill_manual(name='Phylum',
+                            values=c( "#9ecae1", "#a1d99b", "#41ab5d","#238b45" ))
+phylum_scale_8 = scale_fill_manual(name='Phylum',
+                            values=c("#B78560", "#bcbddc", "#9e9ac8", "#6a51a3", 
+                                     "#9ecae1",  "#a1d99b", "#41ab5d","#238b45" ))
+
+class_scale = scale_fill_manual(name='Class',
+                                 values=c("#CAA995", "#B78560", "#9E5C00", "#7D3200",
+                                          "#bcbddc", "#9e9ac8", "#807dba", "#6a51a3",
+                                          "#c6dbef", "#9ecae1", "#6baed6", "#4292c6",
+                                          "#fec44f", "#fdae6b", "#fe9929", "#ff7f00",
+                                          "#a1d99b", "#74c476", "#41ab5d", "#238b45"
+                                # values=c("#dadaeb", "#bcbddc", "#9e9ac8", "#807dba", "#6a51a3",
+                                #          "#eff3ff", "#c6dbef", "#9ecae1", ""#807dba", "#6a51a3",
+                                #          "#feeda0", "#fec44f", "#fdae6b", "#807dba", "#6a51a3",
+                                #          "#c7e9c0", "#a1d99b", "#74c476", "#41ab5d", "#238b45",
+                                #          "#D8C7BE", "#CAA995", "#B78560", "#9E5C00", "#7D3200"
+                                         ))
 ```
 
-```{r}
+```{r DeSeq2}
 bulk_counts<-bulk_df %>% 
   select(-taxid.x) %>% 
   as.matrix()
@@ -117,53 +198,489 @@ write.table(elite_res,file.path('deseq2','elite.txt'),sep="\t",quote=FALSE,row.n
 Phyloseq reports have been converted into a biom file using kraken-biom, which will hopefully load into phyloseq ok...
 
 ```{r phyloseq_prep}
-samples_df<-read.csv('map.txt',header = TRUE,sep="\t")
-row.names(samples_df)<-samples_df$SampleID
-samples<-row.names(samples_df)
-SAM = sample_data(samples_df, errorIfNULL = T)
+elite_samples_df<-read.csv('elite_map.txt',header = TRUE,sep="\t")
+bulk_samples_df<-read.csv('bulk_map.txt',header = TRUE,sep="\t")
+
+row.names(elite_samples_df)<-elite_samples_df$SampleID
+row.names(bulk_samples_df)<-bulk_samples_df$SampleID
+
+elite_samples<-row.names(elite_samples_df)
+bulk_samples<-row.names(bulk_samples_df)
+
+elite_SAM = sample_data(elite_samples_df, errorIfNULL = T)
+bulk_SAM = sample_data(bulk_samples_df, errorIfNULL = T)
+
 ps<-import_biom('kraken/biom/table.biom.gz')
 colnames(tax_table(ps))<-c("Kingdom","Phylum","Class","Order","Family","Genus","Species")
+# clean up taxtable entries to remove k__, c__ etc prefixes
+tax_table(ps)[, colnames(tax_table(ps))] <- gsub(tax_table(ps)[, colnames(tax_table(ps))], pattern = "[a-z]__", replacement = "")
 
-bact_ps<-subset_taxa(ps,Kingdom=='k__Bacteria')
-bact_ps<-prune_samples(samples,bact_ps)
-bact_ps<-phyloseq(otu_table(bact_ps),tax_table(bact_ps),SAM)
+bact_ps<-subset_taxa(ps,Kingdom=='Bacteria')
+
+elite_bact_ps<-prune_samples(elite_samples,bact_ps)
+bulk_bact_ps<-prune_samples(bulk_samples,bact_ps)
+
+elite_bact_ps<-phyloseq(otu_table(elite_bact_ps),tax_table(elite_bact_ps),elite_SAM)
+bulk_bact_ps<-phyloseq(otu_table(bulk_bact_ps),tax_table(bulk_bact_ps),bulk_SAM)
 ```
 
-```{r abundance_plots}
-glommed<-tax_glom(bact_ps,taxrank='Phylum')
+A function to return a factor of taxa ordered by abundance...
+```{r get_tax_order}
+get_tax_count<-function(df,taxrank,taxa) {
+   taxa_df<-df %>% filter(get(taxrank)==taxa) 
+   return(c(taxa,sum(taxa_df$Abundance)))
+}
+
+get_tax_order<-function(df,taxrank) {
+  levs=levels(factor(df[[taxrank]]))
+  taxa_abundance<-sapply(levs, function(x) {get_tax_count(df,taxrank,x)})
+  taxa_abundance<-data.frame(t(taxa_abundance)) 
+  taxa_abundance$X2<-as.numeric(taxa_abundance$X2)
+  taxa_abundance<-taxa_abundance %>% arrange(X2)
+  
+  return(factor(taxa_abundance$X1))
+}
+
+```
+
+```{r phylum_abundance_plots}
+glommed<-tax_glom(elite_bact_ps,taxrank='Phylum')
 dat<-data.table(psmelt(glommed))
 dat$Phylum<-as.character(dat$Phylum)
 dat[, median := median(Abundance, na.rm = TRUE), by = "Phylum"]
 # Change name to remainder of Phylum less than arbitrary cutoff to match 1%...
 dat[(median <= 40000), Phylum := "Others"]
+
+dat<-dat %>% mutate(Status = case_when(
+  Status=='Unfiltered' ~ 'Unfiltered',
+  Status=='MorexV3 aligned' ~ 'Discarded',
+  Status=='MorexV3 unaligned' ~ 'Retained'
+))
+
+phyla=get_tax_order(dat,'Phylum')
 dat$Filtered=factor(dat$Filtered,levels=c('Unfiltered','Filtered'))
-p1 <- ggplot(data=dat, aes(x=Sample, y=Abundance, fill=Phylum)) + geom_bar(aes(), stat="identity", position="stack") +
-  theme_bw() + theme(legend.position = "none", axis.text.x=element_blank())+scale_fill_colorblind() +
-  xlab('')+ylab('Absolute Abundance')+facet_grid(~ Filtered,scales="free",space="free")
+dat$Status=factor(dat$Status,levels=c('Unfiltered','Discarded','Retained'))
 
+elite_abs_replicate_plot <- ggplot(data=dat, aes(x=Sample, y=Abundance,fill=factor(Phylum,levels=phyla))) + 
+  geom_bar(aes(), stat="identity", position="stack") +
+  theme_bw() + 
+  theme(legend.position = "none", 
+        axis.text.x=element_blank(),
+        axis.ticks.x = element_blank(), 
+        plot.margin = unit(c(0.5, 0.5, 0, 0.5), "cm"),
+        strip.background = element_rect(
+          color="black", fill="white", size=0.5, linetype="solid"
+        ),
+        strip.text = element_text(size=7)) +
+  phylum_scale_8 +
+  xlab('')+
+  ylab('Absolute Abundance')+
+  facet_grid(~ Status,scales="free",space="free")
+elite_abs_replicate_plot
+```
+```{r phylum_merged_rep_plot}
+## And merging replicates...
+derep<-merge_samples(glommed,'Status')
+dat<-data.table(psmelt(derep))
+dat$Phylum<-as.character(dat$Phylum)
+dat[, median := median(Abundance, na.rm = TRUE), by = "Phylum"]
+# Arbitrary cutoff for median to match number of phyla in previous plots
+dat[(median <= 120000), Phylum := "Others"]
 
-phy<-transform_sample_counts(bact_ps,function(x) x/sum(x))
+dat<-dat %>% mutate(Sample = case_when(
+  Sample=='Unfiltered' ~ 'Unfiltered',
+  Sample=='MorexV3 aligned' ~ 'Discarded',
+  Sample=='MorexV3 unaligned' ~ 'Retained'
+))
+
+phyla=get_tax_order(dat,'Phylum')
+dat$Filtered=factor(dat$Filtered,levels=c('Unfiltered','Filtered'))
+dat$Sample=factor(dat$Sample,levels=c('Unfiltered','Discarded','Retained'))
+
+elite_abs_merged_plot <- ggplot(data=dat, aes(x=Sample, y=Abundance,fill=factor(Phylum,levels=phyla))) + 
+  geom_bar(aes(), stat="identity", position="stack") +
+  theme_bw() + 
+  theme(legend.position = "none", 
+        axis.ticks.x = element_blank(), 
+        plot.margin = unit(c(0.5, 0.5, 0, 0.5), "cm"),
+        strip.background = element_rect(
+          color="black", fill="white", size=0.5, linetype="solid"
+        ),
+        strip.text = element_text(size=7)) +
+  phylum_scale_8+
+  xlab('Condition')+
+  ylab('Absolute Abundance')
+elite_abs_merged_plot
+```
+```{r phylum_relative_replicate_plot}
+phy<-transform_sample_counts(elite_bact_ps,function(x) x/sum(x))
 glommed<-tax_glom(phy,taxrank='Phylum')
 dat<-data.table(psmelt(glommed))
 dat$Phylum<-as.character(dat$Phylum)
-dat[, median := median(Abundance, na.rm = TRUE), 
-    by = "Phylum"]
+dat[, median := median(Abundance, na.rm = TRUE),  by = "Phylum"]
 # Change name to remainder of Phylum less than 1%
-dat[(median <= 0.01), Phylum := "Others < 1% abundance"]
-dat$Filtered=factor(dat$Filtered,levels=c('Unfiltered','Filtered'))
+dat[(median <= 0.01), Phylum := "Others"]
 
-p2 <- ggplot(data=dat, aes(x=Sample, y=Abundance, fill=Phylum)) + geom_bar(aes(), stat="identity", position="stack") +
-  theme_bw() + theme(legend.position='bottom',axis.text.x=element_blank() )+ 
-  scale_fill_colorblind() + xlab('') + ylab('Relative Abundance')+facet_grid(~ Filtered,scales='free',space='free')
-legend<-get_legend(p2)
-p2<-p2 + theme(legend.position = 'none')
-p<-plot_grid(plot_grid(p1,p2,ncol=2),plot_grid(NULL,legend,ncol=1),nrow=2,rel_heights = c(0.75,0.2),greedy=FALSE,align='hv')
-p
+dat<-dat %>% mutate(Status = case_when(
+  Status=='Unfiltered' ~ 'Unfiltered',
+  Status=='MorexV3 aligned' ~ 'Discarded',
+  Status=='MorexV3 unaligned' ~ 'Retained'
+))
+
+dat$Filtered=factor(dat$Filtered,levels=c('Unfiltered','Filtered'))
+dat$Status=factor(dat$Status,levels=c('Unfiltered','Discarded','Retained'))
+phyla=get_tax_order(dat,'Phylum')
+
+elite_relative_replicate_plot <- ggplot(data=dat, aes(x=Sample, y=Abundance, fill=factor(Phylum,levels=phyla))) + 
+  geom_bar(aes(), stat="identity", position="stack") +
+  theme_bw() + theme(legend.position='bottom',
+                     axis.text.x=element_blank(),
+                     axis.ticks.x=element_blank(),
+                     plot.margin = unit(c(0.5, 0.5, 0.0, 0.5), "cm"),
+                     strip.background = element_rect(
+                       color="black", fill="white", size=0.5, linetype="solid"
+                     ),
+                     strip.text = element_text(size=7),
+                     legend.text=element_text(size=8),
+                     legend.key.size = unit(0.4, 'cm'),
+                     legend.title=element_text(size=10)
+                ) + 
+  phylum_scale_8 +
+  xlab('') + 
+  ylab('Relative Abundance') +
+  facet_grid(~ Status,scales='free',space='free')
+
+legend<-get_legend(elite_relative_replicate_plot)
+elite_relative_replicate_plot<-elite_relative_replicate_plot + theme(legend.position = 'none')
+p_title=ggplot()+
+  ggtitle('Effect of reference filtering on Elite samples: Separate replicates')+
+  theme(plot.margin = unit(c(0.5, 0.5, 0.0, 0.5), "cm"))
+
+elite_replicate_plots<-plot_grid(plot_grid(p_title,ncol=1),
+             plot_grid(elite_abs_replicate_plot,elite_relative_replicate_plot,ncol=2),
+             plot_grid(legend,ncol=1),
+             nrow=3,greedy = FALSE,rel_heights = c(0.1,1,0.1))+
+  theme(plot.background = element_rect(fill='white',colour='white'))
+ggsave('images/elite_phylum_abundance.png',plot = elite_replicate_plots, device='png',width=20,height=10,units='cm')
+elite_replicate_plots
 ```
+```{r phylum_merged_relative_plot}
+## And merging replicates...For relative values the merge should be done on 
+# absolute values then rescaled
+glommed<-tax_glom(elite_bact_ps,taxrank='Phylum')
+derep<-merge_samples(glommed,'Status')
+phy<-transform_sample_counts(derep,function(x) x/sum(x))
+dat<-data.table(psmelt(phy))
+dat$Phylum<-as.character(dat$Phylum)
+dat[, median := median(Abundance, na.rm = TRUE), by = "Phylum"]
+# Change name to remainder of Phylum less than arbitrary cutoff to match 1%...
+dat[(median <= 0.01), Phylum := "Others"]
+
+dat<-dat %>% mutate(Sample = case_when(
+  Sample=='Unfiltered' ~ 'Unfiltered',
+  Sample=='MorexV3 aligned' ~ 'Discarded',
+  Sample=='MorexV3 unaligned' ~ 'Retained'
+))
+
+phyla=get_tax_order(dat,'Phylum')
+dat$Filtered=factor(dat$Filtered,levels=c('Unfiltered','Filtered'))
+dat$Sample=factor(dat$Sample,levels=c('Unfiltered','Discarded','Retained'))
+
+elite_relative_merged_plot <- ggplot(data=dat, aes(x=Sample, y=Abundance,fill=factor(Phylum,levels=phyla))) + 
+  geom_bar(aes(), stat="identity", position="stack") +
+  theme_bw() + 
+  theme(axis.ticks.x = element_blank(), 
+        plot.margin = unit(c(0.5, 0.5, 0, 0.5), "cm"),
+        strip.background = element_rect(
+          color="black", fill="white", size=0.5, linetype="solid"
+        ),
+        strip.text = element_text(size=7),
+        legend.position = 'bottom',
+        legend.text=element_text(size=8),
+        legend.key.size = unit(0.4, 'cm'),
+        legend.title=element_text(size=10))+
+  phylum_scale_8+
+  xlab('Condition')+
+  ylab('Relative Abundance')
+elite_relative_merged_plot
+```
+```{r merge_relative_plots}
+legend<-get_legend(elite_relative_merged_plot)
+elite_relative_merged_plot<-elite_relative_merged_plot + theme(legend.position = 'none')
+
+p_title=ggplot()+
+  ggtitle('Effect of reference filtering on Elite samples: Merged replicates')+
+  theme(plot.margin = unit(c(0.5, 0.5, 0.0, 0.5), "cm"))
+
+merged_plots<-plot_grid(plot_grid(p_title,ncol=1),
+             plot_grid(elite_abs_merged_plot,elite_relative_merged_plot,ncol=2),
+             plot_grid(legend,ncol=1),
+             nrow=3,greedy = FALSE,rel_heights = c(0.1,1,0.2))+
+  theme(plot.background = element_rect(fill='white',colour='white'))
+ggsave('images/elite_phylum_abundance_merged.png',plot = merged_plots, device='png',width=20,height=10,units='cm')
+merged_plots
+```
+## Bulk Phylum Plots
+
+```{r bulk_phylum_abundance_plots}
+glommed<-tax_glom(bulk_bact_ps,taxrank='Phylum')
+dat<-data.table(psmelt(glommed))
+dat$Phylum<-as.character(dat$Phylum)
+dat[, median := median(Abundance, na.rm = TRUE), by = "Phylum"]
+# Change name to remainder of Phylum less than arbitrary cutoff to match 1%...
+dat[(median <= 60000), Phylum := "Others"]
+
+dat<-dat %>% mutate(Status = case_when(
+  Status=='Unfiltered' ~ 'Unfiltered',
+  Status=='MorexV3 aligned' ~ 'Discarded',
+  Status=='MorexV3 unaligned' ~ 'Retained'
+))
+
+phyla=get_tax_order(dat,'Phylum')
+dat$Filtered=factor(dat$Filtered,levels=c('Unfiltered','Filtered'))
+dat$Status=factor(dat$Status,levels=c('Unfiltered','Discarded','Retained'))
+
+bulk_abs_replicate_plot <- ggplot(data=dat, aes(x=Sample, y=Abundance,fill=factor(Phylum,levels=phyla))) + 
+  geom_bar(aes(), stat="identity", position="stack") +
+  theme_bw() + 
+  theme(legend.position = "none", 
+        axis.text.x=element_blank(),
+        axis.ticks.x = element_blank(), 
+        plot.margin = unit(c(0.5, 0.5, 0, 0.5), "cm"),
+        strip.background = element_rect(
+          color="black", fill="white", size=0.5, linetype="solid"
+        ),
+        strip.text = element_text(size=7)) +
+  phylum_scale_4 +
+  xlab('')+
+  ylab('Absolute Abundance')+
+  facet_grid(~ Status,scales="free",space="free")
+bulk_abs_replicate_plot
+```
+
+
+```{r bulk_phylum_merged_rep_plot}
+## And merging replicates...
+derep<-merge_samples(glommed,'Status')
+dat<-data.table(psmelt(derep))
+dat$Phylum<-as.character(dat$Phylum)
+dat[, median := median(Abundance, na.rm = TRUE), by = "Phylum"]
+# Arbitrary cutoff for median to match number of phyla in previous plots
+#dat[(median <= 58000), Phylum := "Others"]
+dat[(median <= 200000), Phylum := "Others"]
+
+dat<-dat %>% mutate(Sample = case_when(
+  Sample=='Unfiltered' ~ 'Unfiltered',
+  Sample=='MorexV3 aligned' ~ 'Discarded',
+  Sample=='MorexV3 unaligned' ~ 'Retained'
+))
+
+phyla=get_tax_order(dat,'Phylum')
+dat$Filtered=factor(dat$Filtered,levels=c('Unfiltered','Filtered'))
+dat$Sample=factor(dat$Sample,levels=c('Unfiltered','Discarded','Retained'))
+
+bulk_abs_merged_plot <- ggplot(data=dat, aes(x=Sample, y=Abundance,fill=factor(Phylum,levels=phyla))) + 
+  geom_bar(aes(), stat="identity", position="stack") +
+  theme_bw() + 
+  theme(legend.position = "none", 
+        axis.ticks.x = element_blank(), 
+        plot.margin = unit(c(0.5, 0.5, 0, 0.5), "cm"),
+        strip.background = element_rect(
+          color="black", fill="white", size=0.5, linetype="solid"
+        ),
+        strip.text = element_text(size=7)) +
+  phylum_scale_4+
+  xlab('Condition')+
+  ylab('Absolute Abundance')
+bulk_abs_merged_plot
+```
+```{r phylum_relative_replicate_plot}
+phy<-transform_sample_counts(bulk_bact_ps,function(x) x/sum(x))
+glommed<-tax_glom(phy,taxrank='Phylum')
+dat<-data.table(psmelt(glommed))
+dat$Phylum<-as.character(dat$Phylum)
+dat[, median := median(Abundance, na.rm = TRUE),  by = "Phylum"]
+# Change name to remainder of Phylum less than 1%
+dat[(median <= 0.01), Phylum := "Others"]
+
+dat<-dat %>% mutate(Status = case_when(
+  Status=='Unfiltered' ~ 'Unfiltered',
+  Status=='MorexV3 aligned' ~ 'Discarded',
+  Status=='MorexV3 unaligned' ~ 'Retained'
+))
+
+dat$Filtered=factor(dat$Filtered,levels=c('Unfiltered','Filtered'))
+dat$Status=factor(dat$Status,levels=c('Unfiltered','Discarded','Retained'))
+phyla=get_tax_order(dat,'Phylum')
+
+bulk_relative_replicate_plot <- ggplot(data=dat, aes(x=Sample, y=Abundance, fill=factor(Phylum,levels=phyla))) + 
+  geom_bar(aes(), stat="identity", position="stack") +
+  theme_bw() + theme(legend.position='bottom',
+                     axis.text.x=element_blank(),
+                     axis.ticks.x=element_blank(),
+                     plot.margin = unit(c(0.5, 0.5, 0.0, 0.5), "cm"),
+                     strip.background = element_rect(
+                       color="black", fill="white", size=0.5, linetype="solid"
+                     ),
+                     strip.text = element_text(size=7),
+                     legend.text=element_text(size=8),
+                     legend.key.size = unit(0.4, 'cm'),
+                     legend.title=element_text(size=10)
+                ) + 
+  phylum_scale_4 +
+  xlab('') + 
+  ylab('Relative Abundance') +
+  facet_grid(~ Status,scales='free',space='free')
+
+legend<-get_legend(bulk_relative_replicate_plot)
+bulk_relative_replicate_plot<-bulk_relative_replicate_plot + theme(legend.position = 'none')
+p_title=ggplot()+
+  ggtitle('Effect of reference filtering on Bulk samples: Separate replicates')+
+  theme(plot.margin = unit(c(0.5, 0.5, 0.0, 0.5), "cm"))
+
+bulk_replicate_plots<-plot_grid(plot_grid(p_title,ncol=1),
+             plot_grid(bulk_abs_replicate_plot,bulk_relative_replicate_plot,ncol=2),
+             plot_grid(legend,ncol=1),
+             nrow=3,greedy = FALSE,rel_heights = c(0.1,1,0.1))+
+  theme(plot.background = element_rect(fill='white',colour='white'))
+ggsave('images/bulk_phylum_abundance.png',plot = elite_replicate_plots, device='png',width=20,height=10,units='cm')
+bulk_replicate_plots
+```
+```{r bulkl_phylum_merged_relative_plot}
+## And merging replicates...For relative values the merge should be done on 
+# absolute values then rescaled
+glommed<-tax_glom(bulk_bact_ps,taxrank='Phylum')
+derep<-merge_samples(glommed,'Status')
+phy<-transform_sample_counts(derep,function(x) x/sum(x))
+dat<-data.table(psmelt(phy))
+dat$Phylum<-as.character(dat$Phylum)
+dat[, median := median(Abundance, na.rm = TRUE), by = "Phylum"]
+# Change name to remainder of Phylum less than arbitrary cutoff to match 1%...
+dat[(median <= 0.01), Phylum := "Others"]
+
+dat<-dat %>% mutate(Sample = case_when(
+  Sample=='Unfiltered' ~ 'Unfiltered',
+  Sample=='MorexV3 aligned' ~ 'Discarded',
+  Sample=='MorexV3 unaligned' ~ 'Retained'
+))
+
+phyla=get_tax_order(dat,'Phylum')
+dat$Filtered=factor(dat$Filtered,levels=c('Unfiltered','Filtered'))
+dat$Sample=factor(dat$Sample,levels=c('Unfiltered','Discarded','Retained'))
+
+bulk_relative_merged_plot <- ggplot(data=dat, aes(x=Sample, y=Abundance,fill=factor(Phylum,levels=phyla))) + 
+  geom_bar(aes(), stat="identity", position="stack") +
+  theme_bw() + 
+  theme(axis.ticks.x = element_blank(), 
+        plot.margin = unit(c(0.5, 0.5, 0, 0.5), "cm"),
+        strip.background = element_rect(
+          color="black", fill="white", size=0.5, linetype="solid"
+        ),
+        strip.text = element_text(size=7),
+        legend.position = 'bottom',
+        legend.text=element_text(size=8),
+        legend.key.size = unit(0.4, 'cm'),
+        legend.title=element_text(size=10))+
+  phylum_scale_4+
+  xlab('Condition')+
+  ylab('Relative Abundance')
+bulk_relative_merged_plot
+```
+```{r merge_bulk_relative_plots}
+legend<-get_legend(bulk_relative_merged_plot)
+bulk_relative_merged_plot<-bulk_relative_merged_plot + theme(legend.position = 'none')
+
+p_title=ggplot()+
+  ggtitle('Effect of reference filtering on Bulk samples: Merged replicates')+
+  theme(plot.margin = unit(c(0.5, 0.5, 0.0, 0.5), "cm"))
+
+merged_plots<-plot_grid(plot_grid(p_title,ncol=1),
+             plot_grid(bulk_abs_merged_plot,bulk_relative_merged_plot,ncol=2),
+             plot_grid(legend,ncol=1),
+             nrow=3,greedy = FALSE,rel_heights = c(0.1,1,0.2))+
+  theme(plot.background = element_rect(fill='white',colour='white'))
+ggsave('images/bulk_phylum_abundance_merged.png',plot = merged_plots, device='png',width=20,height=10,units='cm')
+merged_plots
+```
+# Class level plots
+
+```{r class_abundance_plots}
+glommed<-tax_glom(elite_bact_ps,taxrank='Class')
+dat<-data.table(psmelt(glommed))
+dat$Class<-as.character(dat$Class)
+dat[, median := median(Abundance, na.rm = TRUE), by = "Class"]
+# Change name to remainder of Class less than arbitrary cutoff to match 1%...
+dat[(median <= 12000),Class := "Others"]
+classes<-get_tax_order(dat,'Class')
+dat$Filtered=factor(dat$Filtered,levels=c('Unfiltered','Filtered'))
+dat$Status=factor(dat$Status,levels=c('Unfiltered','MorexV3 aligned','MorexV3 unaligned'))
+p1 <- ggplot(data=dat, aes(x=Sample, y=Abundance,fill=factor(Class,levels=classes))) + 
+  geom_bar(aes(), stat="identity", position="stack") +
+  theme_bw() + 
+  theme(legend.position = "none", 
+        axis.text.x=element_blank(),
+        axis.ticks.x = element_blank(), 
+        plot.margin = unit(c(0.5, 0.5, 0, 0.5), "cm"),
+        strip.background = element_rect(
+          color="black", fill="white", size=0.5, linetype="solid"
+        ),
+        strip.text = element_text(size=7)) +
+  class_scale +
+  xlab('')+
+  ylab('Absolute Abundance')+
+  facet_grid(~ Status,scales="free",space="free")
+
+phy<-transform_sample_counts(elite_bact_ps,function(x) x/sum(x))
+glommed<-tax_glom(phy,taxrank='Class')
+dat<-data.table(psmelt(glommed))
+dat$Class<-as.character(dat$Class)
+dat[, median := median(Abundance, na.rm = TRUE), by = "Class"]
+# Change name to remainder of Phylum less than 1%
+dat[(median <= 0.003), Class := "Others"]
+classes<-get_tax_order(dat,'Class')
+dat$Filtered=factor(dat$Filtered,levels=c('Unfiltered','Filtered'))
+dat$Status=factor(dat$Status,levels=c('Unfiltered','MorexV3 aligned','MorexV3 unaligned'))
+
+p2 <- ggplot(data=dat, aes(x=Sample, y=Abundance, fill=factor(Class,levels=classes))) +
+  geom_bar(aes(), stat="identity", position="stack") +
+  theme_bw() + theme(legend.position='bottom',
+                     axis.text.x=element_blank(),
+                     axis.ticks.x=element_blank(),
+                     plot.margin = unit(c(0.5, 0.5, 0.0, 0.5), "cm"),
+                     strip.background = element_rect(
+                       color="black", fill="white", size=0.5, linetype="solid"
+                     ),
+                     strip.text = element_text(size=7),
+                     legend.text=element_text(size=8),
+                     legend.key.size = unit(0.4, 'cm'),
+                     legend.title=element_text(size=10)
+                ) + 
+  class_scale + 
+  xlab('') + 
+  ylab('Relative Abundance') +
+  facet_grid(~ Status,scales='free',space='free')
+
+legend<-get_legend(p2)
+p2<-p2 + theme(legend.position = 'none', legend.text=element_text(size=8))
+p_title=ggplot()+
+  ggtitle('Effect of reference filtering on Elite replicates')+
+  theme(plot.margin = unit(c(0.5, 0.5, 0.0, 0.5), "cm"))
+
+p<-plot_grid(plot_grid(p_title,ncol=1),
+             plot_grid(p1,p2,ncol=2),
+             plot_grid(legend,ncol=1),
+             nrow=3, greedy = FALSE, rel_heights = c(0.1,1,0.4))+
+  theme(plot.background = element_rect(fill='white',colour='white'))
+p
+ggsave('images/class_abundance.png',plot = p,device='png',width=20,height=10,units='cm')
+```
+We can get an idea of whether there has been a material impact on the community from a beta-diversity comparison...
+
 ```{r bray_distance}
-distmat<-phyloseq::distance(bact_ps,method='bray')
-mds<-ordinate(bact_ps,"MDS",distance=distmat)
-dist_plot<-plot_ordination(bact_ps,mds,color = 'Filtered',title = 'Bray PCoA')
-dist_plot<-dist_plot+theme_bw()+scale_color_colorblind()
+distmat<-phyloseq::distance(elite_bact_ps,method='bray')
+mds<-ordinate(elite_bact_ps,"MDS",distance=distmat)
+dist_plot<-plot_ordination(elite_bact_ps,mds,color = 'Status',title = 'Bray PCoA')
+dist_plot<-dist_plot+theme_bw()
 dist_plot
+ggsave('images/bray.png',plot=dist_plot, device='png',width=20,height=15,units='cm')
 ```

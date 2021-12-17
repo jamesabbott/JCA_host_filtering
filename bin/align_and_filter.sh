@@ -12,7 +12,7 @@ readarray -t samples < <(ls -1 fastq|cut -f1 -d_|sort -u)
 sample=${samples[$SGE_TASK_ID-1]}
 
 mkdir -p bwa_alignments
-mkdir -p filtered_fastq
+mkdir -p filtered_fastq/morex3_aligned
 
 cp -rv bwa/* $TMPDIR/
 cp -v fastq/${sample}* $TMPDIR
@@ -23,4 +23,4 @@ samtools fastq -F 12 -f 2 -N -1 $TMPDIR/${sample}.filtered_1.fq.gz -2 $TMPDIR/${
 	-0 /dev/null $TMPDIR/${sample}.sorted.bam
 
 cp -v ${TMPDIR}/${sample}.sorted* bwa_alignments
-cp -v ${TMPDIR}/${sample}.filtered* filtered_fastq
+cp -v ${TMPDIR}/${sample}.filtered* filtered_fastq/morex3_aligned

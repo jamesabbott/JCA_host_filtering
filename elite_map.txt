@@ -1,0 +1,10 @@
+SampleID	Status
+unfiltered_2023	Unfiltered
+unfiltered_2024	Unfiltered
+unfiltered_2025	Unfiltered
+morex3_aligned_2023	MorexV3 aligned
+morex3_aligned_2024	MorexV3 aligned
+morex3_aligned_2025	MorexV3 aligned
+morex3_unaligned_2023	MorexV3 unaligned
+morex3_unaligned_2024	MorexV3 unaligned
+morex3_unaligned_2025	MorexV3 unaligned
