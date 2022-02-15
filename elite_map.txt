@@ -8,3 +8,18 @@ morex3_aligned_2025	MorexV3 aligned
 morex3_unaligned_2023	MorexV3 unaligned
 morex3_unaligned_2024	MorexV3 unaligned
 morex3_unaligned_2025	MorexV3 unaligned
+mapq10_2023	MapQ10
+mapq10_2024	MapQ10
+mapq10_2025	MapQ10
+mapq15_2023	MapQ15
+mapq15_2024	MapQ15
+mapq15_2025	MapQ15
+mapq20_2023	MapQ20
+mapq20_2024	MapQ20
+mapq20_2025	MapQ20
+mapq25_2023	MapQ25
+mapq25_2024	MapQ25
+mapq25_2025	MapQ25
+mapq30_2023	MapQ30
+mapq30_2024	MapQ30
+mapq30_2025	MapQ30

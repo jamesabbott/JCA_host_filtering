@@ -8,3 +8,18 @@ morex3_aligned_2002	MorexV3 aligned
 morex3_unaligned_2000	MorexV3 unaligned
 morex3_unaligned_2001	MorexV3 unaligned
 morex3_unaligned_2002	MorexV3 unaligned
+mapq10_2000	MapQ10
+mapq10_2001	MapQ10
+mapq10_2002	MapQ10
+mapq15_2000	MapQ15
+mapq15_2001	MapQ15
+mapq15_2002	MapQ15
+mapq20_2000	MapQ20
+mapq20_2001	MapQ20
+mapq20_2002	MapQ20
+mapq25_2000	MapQ25
+mapq25_2001	MapQ25
+mapq25_2002	MapQ25
+mapq30_2000	MapQ30
+mapq30_2001	MapQ30
+mapq30_2002	MapQ30
