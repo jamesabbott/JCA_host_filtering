@@ -26,7 +26,7 @@ def main():
 	samples=['2000','2001','2002','2023','2024','2025']
 	sample=samples[task_id-1]
 	bam='{}.sorted.bam'.format(sample)
-	outbam='{}.mapq_filtered.bam'.format(sample)
+	outbam='{}.mapq_{}_filtered.bam'.format(sample,args.mapq)
 
 	try:
 		os.mkdir('filtered_fastq/mapq_{}'.format(args.mapq))
