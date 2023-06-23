@@ -23,3 +23,9 @@ mapq25_2002	MapQ25
 mapq30_2000	MapQ30
 mapq30_2001	MapQ30
 mapq30_2002	MapQ30
+mapq35_2000	MapQ35
+mapq35_2001	MapQ35
+mapq35_2002	MapQ35
+mapq40_2000	MapQ40
+mapq40_2001	MapQ40
+mapq40_2002	MapQ40

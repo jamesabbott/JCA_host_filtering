@@ -12,3 +12,4 @@ per_genus_fastq
 taxonomy
 __pycache__
 images
+*txt
