@@ -23,3 +23,9 @@ mapq25_2025	MapQ25
 mapq30_2023	MapQ30
 mapq30_2024	MapQ30
 mapq30_2025	MapQ30
+mapq35_2023	MapQ35
+mapq35_2024	MapQ35
+mapq35_2025	MapQ35
+mapq40_2023	MapQ40
+mapq40_2024	MapQ40
+mapq40_2025	MapQ40

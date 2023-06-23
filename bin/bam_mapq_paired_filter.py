@@ -45,7 +45,7 @@ def main():
 	for read in sam.fetch(until_eof=True):
 		if read.is_unmapped:
 			outsam.write(read)
-		elif not read.is_proper_pair and not read.is_secondary and read.is_paired and read.mapping_quality < args.mapq:
+		elif not read.is_proper_pair and read.mapping_quality < args.mapq:
 			outsam.write(read)
 
 	sam.close
