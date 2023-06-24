@@ -5,10 +5,10 @@ from os import makedirs,remove
 from pathlib import Path
 from tabulate import tabulate
 from yaspin import yaspin
-
+import gzip
+import logging
 import requests
 import shutil
-import gzip
 
 def read_dbs():
 	"""
@@ -113,8 +113,8 @@ def bwa_index(db):
 				break
 
 		genome_file=Path('databases')/Path(filename)
-		cmd=['bwa','index',genome_file]
-		common.run_command(cmd)
+		cmd=f'bwa index {genome_file}'
+		common.run_command(cmd,f'bwa_index_{db}')
 
 def clean(db):
 	"""
@@ -129,6 +129,7 @@ def clean(db):
 	dbs=read_dbs()
 	db_info=dbs.get(db)
 	with yaspin(text=f"Cleaning up {db} database..."):
+		logging.info(f'{db}: Database removed...')
 		for file in db_info['files']:
 			search_path=Path('databases')/Path(file['filename']+'*')
 			db_files=glob(str(search_path))

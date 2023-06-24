@@ -1,11 +1,24 @@
 #!/bin/env python
 
 import click
+import logging
 from host_filter import database
+from os import makedirs
+from pathlib import Path
 
 @click.group()
 def cli():
-	pass
+	makedirs('logs',exist_ok=True)
+	logname=Path(f'logs/host_filter.log')
+
+	logging.basicConfig(filename=logname,
+					filemode='a',
+					format='%(asctime)s, %(name)s %(levelname)s %(message)s',
+					datefmt='%H:%M:%S',
+					encoding='UTF-8',
+					level=logging.DEBUG)
+	global logger
+	logger = logging.getLogger(__name__)
 
 @cli.group()
 def db():
