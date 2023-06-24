@@ -1,0 +1,34 @@
+{
+	"barley": {
+		"files":[
+			{
+				"type": "genome",
+				"url":"https://ftp.ensemblgenomes.ebi.ac.uk/pub/plants/release-56/fasta/hordeum_vulgare/dna/Hordeum_vulgare.MorexV3_pseudomolecules_assembly.dna.toplevel.fa.gz",
+				"compressed": "True",
+				"filename": "Barley_MorexV3.fasta"
+			},
+			{
+				"type": "annotation",
+				"url":"https://ftp.ensemblgenomes.ebi.ac.uk/pub/plants/release-56/gff3/hordeum_vulgare/Hordeum_vulgare.MorexV3_pseudomolecules_assembly.56.gff3.gz",
+				"compressed": "True",
+				"filename": "Barley_MorexV3_psuedomolecules.gff3"
+			}
+		]
+	},
+	"tomato": {
+		"files":[
+			{
+				"type": "genome",
+				"url":"https://solgenomics.net/ftp/tomato_genome/assembly/build_4.00/S_lycopersicum_chromosomes.4.00.fa.gz",
+				"compressed": "True",
+				"filename": "S_lycopersicon.4.00.fa"
+			},
+			{
+				"type":"annotation",
+				"url": "https://solgenomics.net/ftp/tomato_genome/annotation/ITAG4.1_release/ITAG4.1_gene_models.gff",
+				"compressed": "False",
+				"filename": "S_lycopersicon_genemodels.gff"
+			}
+		]
+	}
+}
