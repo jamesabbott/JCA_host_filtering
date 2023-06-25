@@ -135,3 +135,29 @@ def clean(db):
 			db_files=glob(str(search_path))
 			for db_file in db_files:
 				remove(db_file)
+
+def get_db_index_files(db):
+	"""
+	Creates list of BWA index files for a specified database
+
+	Required params: 
+		db(str): database name
+
+	Returns:
+		db_files(list): list of BWA index files for database
+	"""
+	dbs=read_dbs()
+	db_info=dbs.get(db)
+
+	db_file=None
+	for file in db_info['files']:
+		if file['type']=='genome':
+			db_file=file['filename']
+
+	if db_file is None:
+		raise Exception(f'No genome file found for database {db}')
+	
+	suffixes=['amb','ann','bwt','pac','sa']
+	db_files=[f"{db_file}.{x}" for x in suffixes]
+
+	return(db_files)
