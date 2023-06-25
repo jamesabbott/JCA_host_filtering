@@ -36,6 +36,9 @@ def available_dbs():
 		None
 	"""
 	dbs=read_dbs()
+	config=common.read_config()
+	db_path=Path(config['database_path'])
+
 	output=[['Database','Downloaded','BWA Indexed']]
 	for db in dbs:
 		db_info=dbs[db]
@@ -46,9 +49,9 @@ def available_dbs():
 
 		for file in db_info['files']:
 			count+=1
-			if (Path('databases')/Path(file['filename']+'.download_complete')).exists():
+			if (db_path / Path(file['filename']+'.download_complete')).exists():
 				found+=1
-			if (Path('databases')/Path(file['filename']+'.sa')).exists():
+			if (db_path / Path(file['filename']+'.sa')).exists():
 				bwa_index='Yes'
 
 		if found==count:
@@ -69,14 +72,17 @@ def download(db):
 		None
 	"""
 	dbs=read_dbs()
+	config=common.read_config()
 	db_info=dbs.get(db)
-	makedirs(Path('databases'),exist_ok=True)
+
+	db_path=Path(config['database_path'])
+	makedirs(db_path,exist_ok=True)
 	with yaspin(text=f"Downloading {db} database...", timer=True):
 		for file in db_info['files']:
 
-			dl_file=Path('databases') / Path(file['filename']+'.dl')
-			final_file=Path('databases')/Path(file['filename'])
-			done_file=Path('databases') / Path(file['filename']+'.download_complete')
+			dl_file= db_path / Path(file['filename']+'.dl')
+			final_file= db_path / Path(file['filename'])
+			done_file= db_path / Path(file['filename']+'.download_complete')
 
 			r=requests.get(file['url'],stream=True)
 
@@ -105,14 +111,17 @@ def bwa_index(db):
 	"""
 
 	dbs=read_dbs()
+	config=common.read_config()
+	db_path=Path(config['database_path'])
 	db_info=dbs.get(db)
+
 	with yaspin(text=f"BWA indexing {db} database...", timer=True):
 		for file in db_info['files']:
 			if file['type']=='genome':
 				filename=file['filename']
 				break
 
-		genome_file=Path('databases')/Path(filename)
+		genome_file=db_path / Path(filename)
 		cmd=f'bwa index {genome_file}'
 		common.run_command(cmd,f'bwa_index_{db}')
 
@@ -127,11 +136,14 @@ def clean(db):
 		None
 	"""
 	dbs=read_dbs()
+	config=common.read_config()
+	db_path=Path(config['database_path'])
 	db_info=dbs.get(db)
+	
 	with yaspin(text=f"Cleaning up {db} database..."):
 		logging.info(f'{db}: Database removed...')
 		for file in db_info['files']:
-			search_path=Path('databases')/Path(file['filename']+'*')
+			search_path=db_path / Path(file['filename']+'*')
 			db_files=glob(str(search_path))
 			for db_file in db_files:
 				remove(db_file)
@@ -147,6 +159,8 @@ def get_db_index_files(db):
 		db_files(list): list of BWA index files for database
 	"""
 	dbs=read_dbs()
+	config=common.read_config()
+	db_path=Path(config['database_path'])
 	db_info=dbs.get(db)
 
 	db_file=None
@@ -158,6 +172,6 @@ def get_db_index_files(db):
 		raise Exception(f'No genome file found for database {db}')
 	
 	suffixes=['amb','ann','bwt','pac','sa']
-	db_files=[f"databases/{db_file}.{x}" for x in suffixes]
+	db_files=[f"{db_path}/{db_file}.{x}" for x in suffixes]
 
 	return(db_files)

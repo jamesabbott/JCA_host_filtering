@@ -1,3 +1,5 @@
+# database_path defines location to store and access databases
+database_path: "databases"
 # database refers to the name of a database defined in genomes.json
 database: tomato
 # Set shadow to 'copy-minimal' to use local storage on cluster nodes

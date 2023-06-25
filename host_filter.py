@@ -2,7 +2,7 @@
 
 import click
 import logging
-from host_filter import database,workflow
+from host_filter import database, workflow
 from os import makedirs
 from pathlib import Path
 import snakemake
