@@ -1,5 +1,6 @@
 {
 	"barley": {
+		"taxid":"4513",
 		"files":[
 			{
 				"type": "genome",
@@ -16,6 +17,7 @@
 		]
 	},
 	"tomato": {
+		"taxid":"4081",
 		"files":[
 			{
 				"type": "genome",

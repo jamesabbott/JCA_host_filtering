@@ -1,0 +1,56 @@
+from glob import glob
+import sys
+sys.path.insert(0,'/homes/jabbott/db/host_filtering')
+from host_filter import database
+
+db=config['database']
+print(config['threads'])
+
+################################################################################
+#
+# TARGETS 
+#
+################################################################################
+
+BWA_INDEX=database.get_db_index_files(db)
+
+FASTQS=glob('*.gz',root_dir='fastq')
+
+SAMPLES=list(set([x.split('_')[0] for x in FASTQS]))
+SAMPLES.sort()
+
+READS=expand('fastq/{sample}_1.fq.gz',sample=SAMPLES) + \
+	  expand('fastq/{sample}_2.fq.gz',sample=SAMPLES)
+
+MAPPINGS=expand("mappings/{sample}.bam",sample=SAMPLES) + \
+		 expand("mappings/{sample}.bam.csi",sample=SAMPLES)
+
+################################################################################
+#
+# RULES
+#
+################################################################################
+
+rule mappings:
+	input: MAPPINGS
+
+rule map:
+	message: "Mapping sample {wildcards.sample} with BWA..."
+	input:
+		R1 = "fastq/{sample}_1.fq.gz",
+		R2 = "fastq/{sample}_2.fq.gz",
+		INDEX = BWA_INDEX
+	output:
+		bam = "mappings/{sample}.bam",
+		index = "mappings/{sample}.bam.csi"
+	params:
+		bwa_index_name=BWA_INDEX[0].replace('.amb','')
+	log: "logs/map.{sample}.log"
+	shadow: config['shadow']
+	threads: config['threads'] 
+	conda: "map.yaml"
+	shell: """
+echo Hostname=$HOSTNAME
+bwa mem -t {threads} -M {params.bwa_index_name} {input.R1} {input.R2} 2> {log} \
+  | samtools sort -@ 8 --write-index -o mappings/{wildcards.sample}.bam -
+"""

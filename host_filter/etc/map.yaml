@@ -1,0 +1,8 @@
+name: map
+channels:
+  - nodefaults
+  - bioconda
+  - conda-forge
+dependencies:
+  - bwa=0.7.17
+  - samtools=1.17

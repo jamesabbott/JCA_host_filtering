@@ -1,0 +1,12 @@
+# database refers to the name of a database defined in genomes.json
+database: tomato
+# Set shadow to 'copy-minimal' to use local storage on cluster nodes
+# See snakemake documentation for other options available her
+shadow: "copy-minimal"
+threads: 16
+drmaa: " -cwd -j y -o logs \
+		-jc {cluster.jc} \
+		-pe smp {cluster.threads} \
+		-mods l_hard mfree {cluster.mem_free} \
+		-adds l_hard local_free {cluster.local_free} \
+		-adds l_hard ramdisk {cluster.ramdisk}" 

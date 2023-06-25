@@ -14,3 +14,6 @@ __pycache__
 images
 *txt
 databases
+old_analysis
+.snakemake
+mappings

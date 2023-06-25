@@ -158,6 +158,6 @@ def get_db_index_files(db):
 		raise Exception(f'No genome file found for database {db}')
 	
 	suffixes=['amb','ann','bwt','pac','sa']
-	db_files=[f"{db_file}.{x}" for x in suffixes]
+	db_files=[f"databases/{db_file}.{x}" for x in suffixes]
 
 	return(db_files)
