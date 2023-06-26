@@ -4,7 +4,7 @@ sys.path.insert(0,'/homes/jabbott/db/host_filtering')
 from host_filter import database
 
 db=config['database']
-print(config['threads'])
+db_obj=database.database()
 
 ################################################################################
 #
@@ -12,7 +12,7 @@ print(config['threads'])
 #
 ################################################################################
 
-BWA_INDEX=database.get_db_index_files(db)
+BWA_INDEX=db_obj.get_db_index_files(db)
 
 FASTQS=glob('*.gz',root_dir='fastq')
 
