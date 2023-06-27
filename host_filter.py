@@ -5,10 +5,11 @@ import logging
 from host_filter import database, workflow
 from os import makedirs
 from pathlib import Path
-import snakemake
 
 db_obj=database.database()
 wf=workflow.workflow()
+
+conf_dbs = db_obj.dbs.keys()
 
 @click.group()
 def cli():
@@ -26,7 +27,6 @@ def cli():
 	global logger
 	logger = logging.getLogger(__name__)
 
-
 @cli.group()
 def db():
 	pass
@@ -36,18 +36,18 @@ def status():
 	db_obj.available_dbs()
 
 @db.command()
-@click.option('--db', help='database name')
+@click.option('--db', required=True, type=click.Choice(conf_dbs), help='database name')
 def download(db):
 	db_obj.download(db)
 	db_obj.bwa_index(db)
 
 @db.command()
-@click.option('--db', help='database name')
+@click.option('--db', required=True, type=click.Choice(conf_dbs), help='database name')
 def index(db):
 	db_obj.bwa_index(db)
 
 @db.command()
-@click.option('--db', help='database name')
+@click.option('--db', required=True, type=click.Choice(conf_dbs), help='database name')
 def clean(db):
 	db_obj.clean(db)
 
