@@ -1,10 +1,12 @@
 from glob import glob
 import sys
 sys.path.insert(0,'/homes/jabbott/db/host_filtering')
-from host_filter import database
+from host_filter import database, read_filter
 
 db=config['database']
+mapq=config.get('mapq')
 db_obj=database.database()
+filter_obj=read_filter.read_filter()
 
 ################################################################################
 #
@@ -19,11 +21,15 @@ FASTQS=glob('*.gz',root_dir='fastq')
 SAMPLES=list(set([x.split('_')[0] for x in FASTQS]))
 SAMPLES.sort()
 
-READS=expand('fastq/{sample}_1.fq.gz',sample=SAMPLES) + \
-	  expand('fastq/{sample}_2.fq.gz',sample=SAMPLES)
+READS=expand("fastq/{sample}_1.fq.gz",sample=SAMPLES) + \
+	  expand("fastq/{sample}_2.fq.gz",sample=SAMPLES)
 
 MAPPINGS=expand("mappings/{sample}.bam",sample=SAMPLES) + \
 		 expand("mappings/{sample}.bam.csi",sample=SAMPLES)
+
+MAPQ_FILTERED_FASTQ=expand("filtered_fastq/mapq_{mapq}/{sample}_unmapped_1.fq.gz",mapq=mapq, sample=SAMPLES) + \
+					expand("filtered_fastq/mapq_{mapq}/{sample}_unmapped_2.fq.gz",mapq=mapq, sample=SAMPLES)
+
 
 ################################################################################
 #
@@ -34,6 +40,9 @@ MAPPINGS=expand("mappings/{sample}.bam",sample=SAMPLES) + \
 rule mappings:
 	input: MAPPINGS
 
+rule mapq_filter:
+	input: MAPQ_FILTERED_FASTQ
+
 rule map:
 	message: "Mapping sample {wildcards.sample} with BWA..."
 	input:
@@ -41,7 +50,7 @@ rule map:
 		R2 = "fastq/{sample}_2.fq.gz",
 		INDEX = BWA_INDEX
 	output:
-		bam = "mappings/{sample}.bam",
+		bam   = "mappings/{sample}.bam",
 		index = "mappings/{sample}.bam.csi"
 	params:
 		bwa_index_name=BWA_INDEX[0].replace('.amb','')
@@ -52,5 +61,21 @@ rule map:
 	shell: """
 echo Hostname=$HOSTNAME
 bwa mem -t {threads} -M {params.bwa_index_name} {input.R1} {input.R2} 2> {log} \
-  | samtools sort -@ 8 --write-index -o mappings/{wildcards.sample}.bam -
+  | samtools sort -@ {threads} --write-index -o mappings/{wildcards.sample}.bam -
 """
+
+rule read_mapq_filter:
+	message: "Filtering {wildcards.sample} mappings to MAPQ {mapq}..."
+	input:
+		bam   = "mappings/{sample}.bam",
+		index = "mappings/{sample}.bam.csi"
+	output: 
+		r1 = "filtered_fastq/mapq_{mapq}/{sample}_unmapped_1.fq.gz", 
+		r2 = "filtered_fastq/mapq_{mapq}/{sample}_unmapped_2.fq.gz"
+	params: mapq=config['mapq']
+	log: "logs/filter_{sample}_{mapq}.log"
+	shadow: config['shadow']
+	threads: 1
+	run:
+		filter_obj.mapq_filter(mapq,wildcards.sample)
+		

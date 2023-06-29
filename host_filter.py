@@ -51,10 +51,19 @@ def index(db):
 def clean(db):
 	db_obj.clean(db)
 
-@cli.command()
-@click.argument('action', type=click.Choice(['mappings','filter']))
-def run(action):
-	wf.run(action)
+@cli.group()
+def run():
+	pass
+
+@run.command()
+def mapping():
+	wf.map()
+
+@run.command()
+@click.option('--mapq', required=True, type=click.IntRange(0,40), help='Mappinq quality threshold', 
+			   default=20, show_default=True)
+def filter(mapq):
+	wf.filter(mapq)
 	
 if __name__ == "__main__":
 	cli()
