@@ -41,9 +41,6 @@ class database:
 		Returns: 
 			None
 		"""
-		#dbs=self.read_dbs()
-		#config=common.read_config()
-		#db_path=Path(config['database_path'])
 
 		output=[['Database','Downloaded','BWA Indexed']]
 		for db in self.dbs:
@@ -77,11 +74,8 @@ class database:
 		Returns: 
 			None
 		"""
-		#dbs=read_dbs()
-		#config=common.read_config()
 		db_info=self.dbs.get(db)
 
-		#db_path=Path(config['database_path'])
 		makedirs(self.db_path,exist_ok=True)
 		with yaspin(text=f"Downloading {db} database...", timer=True):
 			for file in db_info['files']:
@@ -116,9 +110,6 @@ class database:
 			None
 		"""
 
-		#dbs=read_dbs()
-		#config=common.read_config()
-		#db_path=Path(config['database_path'])
 		db_info=self.dbs.get(db)
 
 		with yaspin(text=f"BWA indexing {db} database...", timer=True):
@@ -141,9 +132,6 @@ class database:
 		Returns:
 			None
 		"""
-		#dbs=read_dbs()
-		#config=common.read_config()
-		#db_path=Path(config['database_path'])
 		db_info=self.dbs.get(db)
 		
 		with yaspin(text=f"Cleaning up {db} database..."):
@@ -164,9 +152,6 @@ class database:
 		Returns:
 			db_files(list): list of BWA index files for database
 		"""
-		#dbs=read_dbs()
-		#config=common.read_config()
-		#db_path=Path(config['database_path'])
 		db_info=self.dbs.get(db)
 
 		db_file=None
