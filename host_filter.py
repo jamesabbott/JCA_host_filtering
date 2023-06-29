@@ -60,10 +60,11 @@ def mapping():
 	wf.map()
 
 @run.command()
-@click.option('--mapq', required=True, type=click.IntRange(0,40), help='Mappinq quality threshold', 
+@click.option('-m','--mapq', required=True, type=click.IntRange(0,40), help='Mappinq quality threshold', 
 			   default=20, show_default=True)
-def filter(mapq):
-	wf.filter(mapq)
+@click.option('-v','--verbose', is_flag=True,help='Generate verbose output')
+def filter(mapq,verbose):
+	wf.filter(mapq,verbose)
 	
 if __name__ == "__main__":
 	cli()

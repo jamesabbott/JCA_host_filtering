@@ -36,7 +36,7 @@ class workflow:
 			return 0
 		return 1
 	
-	def filter(self, mapq):
+	def filter(self, mapq, verbose):
 
 		config_file='config.yaml'
 		snakefile='host_filter/etc/Snakefile'
@@ -60,7 +60,8 @@ class workflow:
 			drmaa = drmaa,
 			keepgoing = True,
 			jobname = "filter_mapq_{mapq}_{jobid}",
-			shadow_prefix = '/tmp'
+			shadow_prefix = '/tmp',
+			verbose=verbose
 		)
 
 		if status: 
