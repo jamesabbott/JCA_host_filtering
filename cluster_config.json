@@ -3,8 +3,8 @@
 	{
 		"jc": "short",
 		"mem_free": "8G",
-		"threads": "16",
-		"local_free": "1G",
+		"threads": "1",
+		"local_free": "20G",
 		"ramdisk": "0G"
 	},
 	"map":
