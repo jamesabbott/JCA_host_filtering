@@ -23,25 +23,35 @@ class read_filter:
 		"""
 		print(f'sample={sample}')
 		bam=f'{sample}.bam'
-		outbam=f'{sample}.mapq_{mapq}_filtered.bam'
+
+		filtered_bam=f'{sample}.mapq_{mapq}_filtered.bam'
+		mapped_bam=f'{sample}.mapq_{mapq}_mapped.bam'
 
 		makedirs(f'filtered_fastq/mapq_{mapq}',exist_ok=True)
 		makedirs(f'filtered_bams/mapq_{mapq}',exist_ok=True)
 			
 		sam=pysam.AlignmentFile(Path(f'mappings/{bam}'),'rb')
-		outsam=pysam.AlignmentFile(Path(f'filtered_bams/mapq_{mapq}/{outbam}'), "wb", template=sam)
+		filtered_outsam=pysam.AlignmentFile(Path(f'filtered_bams/mapq_{mapq}/{filtered_bam}'), "wb", template=sam)
+		mapped_outsam=pysam.AlignmentFile(Path(f'filtered_bams/mapq_{mapq}/{mapped_bam}'), "wb", template=sam)
 
 		for read in sam.fetch(until_eof=True):
 			if read.is_unmapped:
-				outsam.write(read)
+				filtered_outsam.write(read)
 			elif read.is_paired and read.mapping_quality < mapq:
-				outsam.write(read)
+				filtered_outsam.write(read)
+			elif read.is_paired:
+				mapped_outsam.write(read)
 
 		sam.close
-		outsam.close
+		filtered_outsam.close
 
-		pysam.index('-c',f'filtered_bams/mapq_{mapq}/{outbam}')
+		pysam.index('-c',f'filtered_bams/mapq_{mapq}/{filtered_bam}')
 		pysam.fastq('-N', '-1', f'filtered_fastq/mapq_{mapq}/{sample}_unmapped_1.fq.gz',
 						  '-2', f'filtered_fastq/mapq_{mapq}/{sample}_unmapped_2.fq.gz',
-						  '-0', '/dev/null', f'filtered_bams/mapq_{mapq}/{outbam}')
+						  '-0', '/dev/null', f'filtered_bams/mapq_{mapq}/{filtered_bam}')
+
+		pysam.index('-c',f'filtered_bams/mapq_{mapq}/{mapped_bam}')
+		pysam.fastq('-N', '-1', f'filtered_fastq/mapq_{mapq}/{sample}_mapped_1.fq.gz',
+						  '-2', f'filtered_fastq/mapq_{mapq}/{sample}_mapped_2.fq.gz',
+						  '-0', '/dev/null', f'filtered_bams/mapq_{mapq}/{mapped_bam}')
 

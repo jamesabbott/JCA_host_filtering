@@ -28,7 +28,9 @@ MAPPINGS=expand("mappings/{sample}.bam",sample=SAMPLES) + \
 		 expand("mappings/{sample}.bam.csi",sample=SAMPLES)
 
 MAPQ_FILTERED_FASTQ=expand("filtered_fastq/mapq_{mapq}/{sample}_unmapped_1.fq.gz",mapq=mapq, sample=SAMPLES) + \
-					expand("filtered_fastq/mapq_{mapq}/{sample}_unmapped_2.fq.gz",mapq=mapq, sample=SAMPLES)
+					expand("filtered_fastq/mapq_{mapq}/{sample}_unmapped_2.fq.gz",mapq=mapq, sample=SAMPLES) + \
+					expand("filtered_fastq/mapq_{mapq}/{sample}_mapped_1.fq.gz",mapq=mapq, sample=SAMPLES) + \
+					expand("filtered_fastq/mapq_{mapq}/{sample}_mapped_2.fq.gz",mapq=mapq, sample=SAMPLES)
 
 
 ################################################################################
@@ -71,7 +73,9 @@ rule read_mapq_filter:
 		index = "mappings/{sample}.bam.csi"
 	output: 
 		r1 = "filtered_fastq/mapq_{mapq}/{sample}_unmapped_1.fq.gz", 
-		r2 = "filtered_fastq/mapq_{mapq}/{sample}_unmapped_2.fq.gz"
+		r2 = "filtered_fastq/mapq_{mapq}/{sample}_unmapped_2.fq.gz",
+		r3 = "filtered_fastq/mapq_{mapq}/{sample}_mapped_1.fq.gz",
+		r4 = "filtered_fastq/mapq_{mapq}/{sample}_mapped_2.fq.gz",
 	params: mapq=config['mapq']
 	log: "logs/filter_{sample}_{mapq}.log"
 	shadow: config['shadow']
