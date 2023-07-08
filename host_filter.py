@@ -2,15 +2,17 @@
 
 import click
 import logging
-from host_filter import database, workflow
-from os import makedirs
+from host_filter import genome, workflow, common, classify
+from os import makedirs,environ
 from pathlib import Path
 import re
 
-db_obj=database.database()
+db_obj=genome.database()
 wf=workflow.workflow()
+classify_obj=classify.classify()
 
 conf_dbs = db_obj.dbs.keys()
+conf_ref_dbs = classify_obj.dbs.keys()
 
 def validate_range(ctx,param,value):
 	match=re.search(r'^([0-9]+)-([0-9]+):([0-9]+)$',value)
@@ -37,28 +39,41 @@ def cli():
 	logger = logging.getLogger(__name__)
 
 @cli.group()
-def db():
+def genome():
 	pass
 
-@db.command()
+@genome.command()
 def status():
 	db_obj.available_dbs()
 
-@db.command()
+@genome.command()
 @click.option('--db', required=True, type=click.Choice(conf_dbs), help='database name')
 def download(db):
 	db_obj.download(db)
 	db_obj.bwa_index(db)
 
-@db.command()
+@genome.command()
 @click.option('--db', required=True, type=click.Choice(conf_dbs), help='database name')
 def index(db):
 	db_obj.bwa_index(db)
 
-@db.command()
+@genome.command()
 @click.option('--db', required=True, type=click.Choice(conf_dbs), help='database name')
 def clean(db):
 	db_obj.clean(db)
+
+@cli.group()
+def db():
+	pass
+
+@db.command()
+def status():
+	classify_obj.available_dbs()
+
+@db.command()
+@click.option('--db', required=True, type=click.Choice(conf_ref_dbs), help='reference database name')
+def download(db):
+	classify_obj.download(db)
 
 @cli.group()
 def run():

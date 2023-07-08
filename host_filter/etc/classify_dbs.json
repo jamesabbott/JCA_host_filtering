@@ -1,0 +1,11 @@
+{
+	"metaphlan": {
+		"command": "metaphlan --install --bowtie2db __DBPATH__"
+	},
+	"kraken_standard": {
+		"file": "https:\/\/genome-idx.s3.amazonaws.com\/kraken\/k2_standard_20230605.tar.gz"
+	},
+	"kraken_pluspfp": {
+		"file": "https:////genome-idx.s3.amazonaws.com/kraken/k2_pluspfp_20230605.tar.gz"
+	}
+}
