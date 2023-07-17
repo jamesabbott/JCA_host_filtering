@@ -18,3 +18,4 @@ old_analysis
 .snakemake
 mappings
 classification_databases
+metaphlan

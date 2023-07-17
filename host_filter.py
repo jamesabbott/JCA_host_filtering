@@ -92,12 +92,18 @@ def filter(mapq,verbose):
 	wf.filter(mapq,verbose)
 
 @run.command()
-@click.option('-r','--range', required=True, callback=validate_range,
+@click.option('-m','--mapq_range', required=True, callback=validate_range,
 	      help='Range of mapping qualities to filter i.e. "10-30:5" will carry out separate filtering steps between MAPQ 10 and 30 with a increment of 5')
 @click.option('-v','--verbose', is_flag=True,help='Generate verbose output')
-def range_filter(range,verbose):
-	start_mapq, end_mapq, increment=range
-	wf.range_filter(int(start_mapq),int(end_mapq), int(increment), verbose)
+def range_filter(mapq_range,verbose):
+	start_mapq, end_mapq, increment=mapq_range
+	#increment end_mapq by 1 to ensure the final value is included if it on a boundary
+	wf.range_filter(int(start_mapq),int(end_mapq)+1, int(increment), verbose)
+
+@run.command()
+@click.option('-v','--verbose', is_flag=True,help='Generate verbose output')
+def metaphlan(verbose):
+	wf.metaphlan(verbose)
 
 if __name__ == "__main__":
 	cli()

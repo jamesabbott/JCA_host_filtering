@@ -1,0 +1,22 @@
+name: metaphlan
+channels:
+  - nodefaults
+  - bioconda
+  - conda-forge
+dependencies:
+  - conda-forge::biom-format=2.1.15
+  - conda-forge::biopython=1.81
+  - bioconda::blast=2.14.0
+  - bioconda::bowtie2=2.5.1
+  - bioconda::cmseq=1.0.4
+  - bioconda::dendropy=4.6.1
+  - conda-forge::matplotlib-base=3.7.1
+  - bioconda::muscle=5.1
+  - conda-forge::numpy=1.25.0
+  - conda-forge::pandas=2.0.2
+  - bioconda::phylophlan=3.0.3
+  - bioconda::pysam=0.21.0
+  - bioconda::raxml=8.2.12
+  - conda-forge::requests=2.31.0
+  - bioconda::samtools=1.17
+  - conda-forge::scipy=1.10.1

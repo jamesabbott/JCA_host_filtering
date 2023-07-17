@@ -15,6 +15,14 @@
 		"local_free": "20G",
 		"ramdisk": "0G"
 	},
+	"classify_metaphlan":
+	{
+		"jc": "short",
+		"mem_free": "24G",
+		"threads": "16",
+		"local_free": "20G",
+		"ramdisk": "0G"
+	},
 	"kraken_nomapq":
 	{
 		"jc": "short",
