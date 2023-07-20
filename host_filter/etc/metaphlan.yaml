@@ -15,6 +15,7 @@ dependencies:
   - conda-forge::numpy=1.25.0
   - conda-forge::pandas=2.0.2
   - bioconda::phylophlan=3.0.3
+  - bioconda::metaphlan=4.0.6
   - bioconda::pysam=0.21.0
   - bioconda::raxml=8.2.12
   - conda-forge::requests=2.31.0
