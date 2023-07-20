@@ -32,6 +32,9 @@ SAMPLES.sort()
 PAIR=('1','2')
 STATE=('mapped','unmapped')
 MPA_SUFFIX=('txt', 'bowtie2.bz2', 'biom')
+KRAKEN_SUFFIX=('txt','report.txt', 'biom')
+
+KRAKEN_DB=config['kraken_db']
 
 # Set MAPQ based upon type passed
 if type(config.get('mapq'))==str and config.get('mapq') == 'filtered':
@@ -57,6 +60,9 @@ MAPQ_FILTERED_FASTQ=expand("filtered_fastq/mapq_{mapq}/{sample}_{state}_{pair}.f
 METAPHLAN=expand("metaphlan/{mapq}/{sample}_{state}.{suffix}", 
 	mapq=MAPQ, sample=SAMPLES, state=STATE,suffix=MPA_SUFFIX) 
 
+KRAKEN=expand("kraken/{kraken_db}/{mapq}/{sample}_{state}.{suffix}", 
+	kraken_db=KRAKEN_DB, mapq=MAPQ, sample=SAMPLES, state=STATE,suffix=KRAKEN_SUFFIX) 
+
 ################################################################################
 #
 # RULES
@@ -71,6 +77,9 @@ rule mapq_filter:
 
 rule metaphlan:
 	input: METAPHLAN
+
+rule kraken:
+	input: KRAKEN
 
 rule map:
 	message: "Mapping sample {wildcards.sample} with BWA..."
@@ -129,4 +138,26 @@ rule classify_metaphlan:
 metaphlan {input.r1},{input.r2} --input_type fastq --bowtie2out metaphlan/{wildcards.mapq}/{wildcards.sample}_{wildcards.state}.bowtie2.bz2 \
 	-o metaphlan/{wildcards.mapq}/{wildcards.sample}_{wildcards.state}.txt --biom metaphlan/{wildcards.mapq}/{wildcards.sample}_{wildcards.state}.biom --nproc {threads} \
 	--bowtie2db {params.db_path}/metaphlan
+"""
+
+rule classify_kraken:
+	message: "Classifying {wildcards.sample} with kraken against {wildcards.kraken_db}..."
+	input:
+		r1 = "filtered_fastq/{mapq}/{sample}_{state}_1.fq.gz",
+		r2 = "filtered_fastq/{mapq}/{sample}_{state}_2.fq.gz"
+	output: 
+		txt = "kraken/{kraken_db}/{mapq}/{sample}_{state}.txt",
+		report = "kraken/{kraken_db}/{mapq}/{sample}_{state}.report.txt",
+		biom = "kraken/{kraken_db}/{mapq}/{sample}_{state}.biom"
+	params:
+		db_path=f"{db_path}/{config['kraken_db']}"
+	log: "logs/kraken_{kraken_db}_{mapq}_{state}_{sample}.log"
+	shadow: config['shadow']
+	threads: 16
+	conda: "kraken.yaml"
+	shell:"""
+kraken2 --db {params.db_path} --threads {threads} --use-names --report kraken/{wildcards.kraken_db}/{wildcards.mapq}/{wildcards.sample}_{wildcards.state}.report.txt \
+		--output kraken/{wildcards.kraken_db}/{wildcards.mapq}/{wildcards.sample}_{wildcards.state}.txt --gzip-compressed --paired {input.r1} {input.r2}
+kraken-biom --fmt json -o kraken/{wildcards.kraken_db}/{wildcards.mapq}/{wildcards.sample}_{wildcards.state}.biom \
+		kraken/{wildcards.kraken_db}/{wildcards.mapq}/{wildcards.sample}_{wildcards.state}.report.txt
 """

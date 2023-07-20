@@ -39,6 +39,7 @@ class workflow:
 			jobname = "map_{jobid}",
 			shadow_prefix = '/tmp', 
 			use_conda = True,
+			conda_frontend='mamba',
 			verbose=verbose
 		)
 
@@ -162,6 +163,8 @@ class workflow:
 			keepgoing = True,
 			jobname = "metaphlan_{wildcards.sample}_{wildcards.state}_{jobid}",
 			shadow_prefix = '/tmp',
+			use_conda=True,
+			conda_frontend='mamba',
 			verbose=verbose,
 			lint=False,
 			summary=False,
@@ -169,3 +172,48 @@ class workflow:
 		)
 		if not status:
 			raise Exception('Snakemake failed running metaphlan}')
+
+	def kraken(self, db, verbose):
+
+		"""
+		Classifies filtered fastq files using kraken
+
+		Required parameters: 
+			db: (str): database name to search
+			verbose (bool): verbose reporting
+
+		Returns:
+			None
+		"""
+
+		with open(self.config_file,'r') as in_fh:
+			config=yaml.safe_load(in_fh)
+
+		drmaa=config['drmaa']
+
+		if verbose:
+			print(f'Classifying with Kraken using {db}')
+			
+		status = snakemake.snakemake(
+		self.snakefile,
+			targets = ['kraken'],
+			printshellcmds = True,
+			printreason = True,
+			nodes = 100,
+			latency_wait = 60,
+			config={'mapq':'filtered', 'kraken_db':db},
+			configfiles = [self.config_file],
+			cluster_config = self.cluster_config,
+			drmaa = drmaa,
+			keepgoing = True,
+			jobname = "{wildcards.kraken_db}_{wildcards.mapq}_{wildcards.sample}_{wildcards.state}_{jobid}",
+			shadow_prefix = '/tmp',
+			use_conda=True,
+			conda_frontend='mamba',
+			verbose=verbose,
+			lint=False,
+			summary=False,
+			dryrun=False
+		)
+		if not status:
+			raise Exception('Snakemake failed running kraken}')

@@ -105,5 +105,11 @@ def range_filter(mapq_range,verbose):
 def metaphlan(verbose):
 	wf.metaphlan(verbose)
 
+@run.command()
+@click.option('-v','--verbose', is_flag=True, help='Generage verbose output')
+@click.option('-d','--db', type=click.Choice(conf_ref_dbs), default='kraken_standard', help='reference database name')
+def kraken(db,verbose):
+	wf.kraken(db,verbose)
+
 if __name__ == "__main__":
 	cli()
