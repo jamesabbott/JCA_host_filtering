@@ -4,7 +4,7 @@ import pathlib
 import re
 import sys
 sys.path.insert(0,'/homes/jabbott/db/host_filtering')
-from host_filter import genome, read_filter
+from host_filter import genome, read_filter, analysis
 
 envvars:
 	"CONDA_PREFIX"
@@ -41,7 +41,7 @@ if type(config.get('mapq'))==str and config.get('mapq') == 'filtered':
 	# for classification jobs, run on all filtered fastq files
 	MAPQ=glob('filtered_fastq/*')
 	MAPQ=[x.replace('filtered_fastq/','') for x in MAPQ]
-elif type(config.get('mapq'))==int or type(config.get('mapq'))==list:
+elif type(config.get('mapq'))==int or type(config.get('mapq'))==str or type(config.get('mapq'))==list:
 	# for filtering, mapq is passed as an int, or a list for a range...
 	# we can use these as they are...
 	MAPQ=config.get('mapq')
@@ -51,17 +51,16 @@ else:
 
 READS=expand("fastq/{sample}_{pair}.fq.gz",sample=SAMPLES, pair=PAIR)
 
-MAPPINGS=expand("mappings/{sample}.bam",sample=SAMPLES) + \
-		 expand("mappings/{sample}.bam.csi",sample=SAMPLES)
+MAPPINGS=expand("mappings/{sample}.{suffix}", sample=SAMPLES, suffix=['bam','bam.csi','flagstat']) 
 
 MAPQ_FILTERED_FASTQ=expand("filtered_fastq/mapq_{mapq}/{sample}_{state}_{pair}.fq.gz", 
 	mapq=MAPQ, sample=SAMPLES, state=STATE, pair=PAIR)
 
 METAPHLAN=expand("metaphlan/{mapq}/{sample}_{state}.{suffix}", 
-	mapq=MAPQ, sample=SAMPLES, state=STATE,suffix=MPA_SUFFIX) 
+	mapq=MAPQ, sample=SAMPLES, state=STATE, suffix=MPA_SUFFIX) 
 
-KRAKEN=expand("kraken/{kraken_db}/{mapq}/{sample}_{state}.{suffix}", 
-	kraken_db=KRAKEN_DB, mapq=MAPQ, sample=SAMPLES, state=STATE,suffix=KRAKEN_SUFFIX) 
+KRAKEN=expand("kraken/{kraken_db}/mapq_{mapq}/{sample}_{state}.{suffix}", 
+	kraken_db=KRAKEN_DB, mapq=MAPQ, sample=SAMPLES, state=STATE, suffix=KRAKEN_SUFFIX) 
 
 ################################################################################
 #
@@ -89,7 +88,8 @@ rule map:
 		INDEX = BWA_INDEX
 	output:
 		bam   = "mappings/{sample}.bam",
-		index = "mappings/{sample}.bam.csi"
+		index = "mappings/{sample}.bam.csi",
+		flagstat = "mappings/{sample}.flagstat"
 	params:
 		bwa_index_name=BWA_INDEX[0].replace('.amb','')
 	log: "logs/map.{sample}.log"
@@ -100,6 +100,7 @@ rule map:
 echo Hostname=$HOSTNAME
 bwa mem -t {threads} -M {params.bwa_index_name} {input.R1} {input.R2} 2> {log} \
   | samtools sort -@ {threads} --write-index -o mappings/{wildcards.sample}.bam -
+samtools flagstat mappings/{wildcards.sample}.bam > mappings/{wildcards.sample}.flagstat
 """
 
 rule read_mapq_filter:
