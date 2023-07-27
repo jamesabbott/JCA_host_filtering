@@ -2,14 +2,16 @@
 
 import click
 import logging
-from host_filter import genome, workflow, common, classify
-from os import makedirs,environ
+from glob import glob
+from host_filter import genome, workflow, classify, analysis
+from os import makedirs
 from pathlib import Path
 import re
 
 db_obj=genome.database()
 wf=workflow.workflow()
 classify_obj=classify.classify()
+analysis_obj=analysis.analysis() 
 
 conf_dbs = db_obj.dbs.keys()
 conf_ref_dbs = classify_obj.dbs.keys()
@@ -106,10 +108,20 @@ def metaphlan(verbose):
 	wf.metaphlan(verbose)
 
 @run.command()
-@click.option('-v','--verbose', is_flag=True, help='Generage verbose output')
+@click.option('-v','--verbose', is_flag=True, help='Generate verbose output')
 @click.option('-d','--db', type=click.Choice(conf_ref_dbs), default='kraken_standard', help='reference database name')
 def kraken(db,verbose):
 	wf.kraken(db,verbose)
+
+@cli.command()
+@click.option('-r','--results', type=click.Choice(conf_ref_dbs), default='kraken_standard', help='result set to analyse')
+@click.option('-v','--verbose', is_flag=True, help='Generate verbose output')
+def analyse(results,  verbose):
+	results_path=f"{results.split('_')[0]}/{results}"
+	mapq_range=glob(f"{results_path}/*")
+	mapq_range=[Path(x).name for x in mapq_range]
+	for mapq in mapq_range:
+		analysis_obj.analyse(results,mapq,verbose)
 
 if __name__ == "__main__":
 	cli()
