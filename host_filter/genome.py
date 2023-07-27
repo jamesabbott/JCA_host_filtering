@@ -64,6 +64,18 @@ class database:
 			
 		print(tabulate(output,headers='firstrow',tablefmt='fancy_grid'))
 
+	def get_db_info(self,db):
+		"""
+		Extract metadata fields from genomes.json for a given database
+		Required args:
+			db(str): database name
+
+		Returns:
+			db_info(dict): parsed data
+		"""
+		db_info=self.dbs.get(db)
+		return(db_info)
+
 	def download(self,db):
 		"""
 		Downloads files for specified database 
