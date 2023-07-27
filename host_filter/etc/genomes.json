@@ -1,6 +1,8 @@
 {
 	"barley": {
 		"taxid":"4513",
+		"species":"Hordeum vulgare",
+		"superkingdom": "Eukaryota",
 		"files":[
 			{
 				"type": "genome",
@@ -17,7 +19,9 @@
 		]
 	},
 	"tomato": {
-		"taxid":"4081",
+		"taxid": "4081",
+		"species": "Solanum lycopersicum",
+		"superkingdom": "Eukaryota",
 		"files":[
 			{
 				"type": "genome",
