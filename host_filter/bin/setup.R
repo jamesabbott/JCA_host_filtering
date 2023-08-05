@@ -31,6 +31,7 @@ if (!require("BiocManager", quietly = TRUE))
 
 loadlib('dplyr',   version='1.12',  bioc=FALSE)
 loadlib('getopt',  version='1.20.3',bioc=FALSE)
+loadlib('ggbeeswarm', version='0.7.2', bioc=FALSE)
 loadlib('ggplot2', version='3.42',  bioc=FALSE)
 loadlib('ggh4x', version='0.2.5',  bioc=FALSE)
 loadlib('ggnewscale', version='0.4.9', bioc=FALSE)

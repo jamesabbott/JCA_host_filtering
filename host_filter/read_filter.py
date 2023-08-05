@@ -1,4 +1,6 @@
 import pysam
+import gzip
+from Bio import SeqIO
 from pathlib import Path
 from os import makedirs
 
@@ -49,9 +51,27 @@ class read_filter:
 		pysam.fastq('-N', '-1', f'filtered_fastq/mapq_{mapq}/{sample}_unmapped_1.fq.gz',
 						  '-2', f'filtered_fastq/mapq_{mapq}/{sample}_unmapped_2.fq.gz',
 						  '-0', '/dev/null', f'filtered_bams/mapq_{mapq}/{filtered_bam}')
-
+		
 		pysam.index('-c',f'filtered_bams/mapq_{mapq}/{mapped_bam}')
 		pysam.fastq('-N', '-1', f'filtered_fastq/mapq_{mapq}/{sample}_mapped_1.fq.gz',
 						  '-2', f'filtered_fastq/mapq_{mapq}/{sample}_mapped_2.fq.gz',
 						  '-0', '/dev/null', f'filtered_bams/mapq_{mapq}/{mapped_bam}')
+
+		unmapped_count=0
+		mapped_count=0
+
+		with gzip.open(f'filtered_fastq/mapq_{mapq}/{sample}_unmapped_1.fq.gz','rt') as in_fh:
+			records=SeqIO.parse(in_fh, 'fastq')
+			for record in records:
+				unmapped_count=unmapped_count+1
+
+		with gzip.open(f'filtered_fastq/mapq_{mapq}/{sample}_mapped_1.fq.gz','rt') as in_fh:
+			records=SeqIO.parse(in_fh, 'fastq')
+			for record in records:
+				mapped_count=mapped_count+1
+
+		print(mapped_count)
+		with open(f'filtered_fastq/mapq_{mapq}/{sample}_stats.txt','w') as stats_fh:
+			stats_fh.write(f"Mapped\t{mapped_count}\n")
+			stats_fh.write(f"Unmapped\t{unmapped_count}\n")
 
