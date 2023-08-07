@@ -35,6 +35,7 @@ MPA_SUFFIX=('txt', 'bowtie2.bz2', 'biom')
 KRAKEN_SUFFIX=('txt','report.txt', 'biom')
 
 KRAKEN_DB=config['kraken_db']
+METAPHLAN_DB=config['metaphlan_db']
 
 # Set MAPQ based upon type passed
 if type(config.get('mapq'))==str and config.get('mapq') == 'filtered':
@@ -54,10 +55,11 @@ READS=expand("fastq/{sample}_{pair}.fq.gz",sample=SAMPLES, pair=PAIR)
 MAPPINGS=expand("mappings/{sample}.{suffix}", sample=SAMPLES, suffix=['bam','bam.csi','flagstat']) 
 
 MAPQ_FILTERED_FASTQ=expand("filtered_fastq/mapq_{mapq}/{sample}_{state}_{pair}.fq.gz", 
-	mapq=MAPQ, sample=SAMPLES, state=STATE, pair=PAIR)
+	mapq=MAPQ, sample=SAMPLES, state=STATE, pair=PAIR) + \
+	expand("filtered_fastq/mapq_{mapq}/{sample}_stats.txt", mapq=MAPQ, sample=SAMPLES)
 
-METAPHLAN=expand("metaphlan/{mapq}/{sample}_{state}.{suffix}", 
-	mapq=MAPQ, sample=SAMPLES, state=STATE, suffix=MPA_SUFFIX) 
+METAPHLAN=expand("metaphlan/{metaphlan_db}/{mapq}/{sample}_{state}.{suffix}", 
+	metaphlan_db=METAPHLAN_DB, mapq=MAPQ, sample=SAMPLES, state=STATE, suffix=MPA_SUFFIX) 
 
 KRAKEN=expand("kraken/{kraken_db}/mapq_{mapq}/{sample}_{state}.{suffix}", 
 	kraken_db=KRAKEN_DB, mapq=MAPQ, sample=SAMPLES, state=STATE, suffix=KRAKEN_SUFFIX) 
@@ -112,7 +114,8 @@ rule read_mapq_filter:
 		r1 = "filtered_fastq/mapq_{mapq}/{sample}_unmapped_1.fq.gz", 
 		r2 = "filtered_fastq/mapq_{mapq}/{sample}_unmapped_2.fq.gz",
 		r3 = "filtered_fastq/mapq_{mapq}/{sample}_mapped_1.fq.gz",
-		r4 = "filtered_fastq/mapq_{mapq}/{sample}_mapped_2.fq.gz"
+		r4 = "filtered_fastq/mapq_{mapq}/{sample}_mapped_2.fq.gz",
+		stats = "filtered_fastq/mapq_{mapq}/{sample}_stats.txt",
 	log: "logs/filter_{sample}_{mapq}.log"
 	shadow: config['shadow']
 	threads: 1
@@ -121,24 +124,26 @@ rule read_mapq_filter:
 		
 
 rule classify_metaphlan:
-	message: "Classifying {wildcards.sample} with metaphlan..."
+	message: "Classifying {wildcards.sample} with metaphlan against {wildcards.metaphlan_db}..."
 	input:
 		r1 = "filtered_fastq/{mapq}/{sample}_{state}_1.fq.gz",
 		r2 = "filtered_fastq/{mapq}/{sample}_{state}_2.fq.gz"
 	output: 
-		biom = "metaphlan/{mapq}/{sample}_{state}.biom",
-		bz2 = "metaphlan/{mapq}/{sample}_{state}.bowtie2.bz2",
-		txt = "metaphlan/{mapq}/{sample}_{state}.txt"
+		biom = "metaphlan/{metaphlan_db}/{mapq}/{sample}_{state}.biom",
+		bz2 = "metaphlan/{metaphlan_db}/{mapq}/{sample}_{state}.bowtie2.bz2",
+		txt = "metaphlan/{metaphlan_db}/{mapq}/{sample}_{state}.txt"
 	params:
 		db_path=db_path
-	log: "logs/metaphlan_{mapq}_{state}_{sample}.log"
+	log: "logs/metaphlan_{metaphlan_db}_{mapq}_{state}_{sample}.log"
 	shadow: config['shadow']
 	threads: 16
 	conda: "metaphlan.yaml"
 	shell:"""
-metaphlan {input.r1},{input.r2} --input_type fastq --bowtie2out metaphlan/{wildcards.mapq}/{wildcards.sample}_{wildcards.state}.bowtie2.bz2 \
-	-o metaphlan/{wildcards.mapq}/{wildcards.sample}_{wildcards.state}.txt --biom metaphlan/{wildcards.mapq}/{wildcards.sample}_{wildcards.state}.biom --nproc {threads} \
-	--bowtie2db {params.db_path}/metaphlan
+metaphlan {input.r1},{input.r2} --input_type fastq \
+	--bowtie2out metaphlan/{wildcards.metaphlan_db}/{wildcards.mapq}/{wildcards.sample}_{wildcards.state}.bowtie2.bz2 \
+	-o metaphlan/{wildcards.metaphlan_db}/{wildcards.mapq}/{wildcards.sample}_{wildcards.state}.txt \
+	--biom metaphlan/{wildcards.metaphlan_db}/{wildcards.mapq}/{wildcards.sample}_{wildcards.state}.biom --nproc {threads} \
+	--bowtie2db {params.db_path}/{wildcards.metaphlan_db}
 """
 
 rule classify_kraken:

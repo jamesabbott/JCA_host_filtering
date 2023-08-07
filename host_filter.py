@@ -104,8 +104,9 @@ def range_filter(mapq_range,verbose):
 
 @run.command()
 @click.option('-v','--verbose', is_flag=True,help='Generate verbose output')
-def metaphlan(verbose):
-	wf.metaphlan(verbose)
+@click.option('-d','--db', type=click.Choice(conf_ref_dbs), default='metaphlan_standard', help='reference database name')
+def metaphlan(db,verbose):
+	wf.metaphlan(db,verbose)
 
 @run.command()
 @click.option('-v','--verbose', is_flag=True, help='Generate verbose output')

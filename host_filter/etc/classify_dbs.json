@@ -1,5 +1,5 @@
 {
-	"metaphlan": {
+	"metaphlan_standard": {
 		"command": "metaphlan --install --bowtie2db __DBPATH__"
 	},
 	"kraken_standard": {
