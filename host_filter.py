@@ -24,6 +24,7 @@ def validate_range(ctx,param,value):
 		raise click.BadParameter("Range format must be start-end:increment i.e. 10-30:5")
 		
 		
+
 @click.group()
 def cli():
 	makedirs('logs',exist_ok=True)
@@ -39,6 +40,11 @@ def cli():
 	)
 	global logger
 	logger = logging.getLogger(__name__)
+
+@cli.command()
+def unlock():
+	wf.unlock()
+
 
 @cli.group()
 def genome():

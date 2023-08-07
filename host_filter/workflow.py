@@ -6,6 +6,24 @@ class workflow:
 		self.config_file='config.yaml'
 		self.snakefile='host_filter/etc/Snakefile'
 		self.cluster_config='cluster_config.json'
+	
+	def unlock(self):
+		"""
+		Unlocks snakemake directory in event of failed run leaving locks
+		intact
+
+		Required arguments: None
+
+		Returns: None
+		"""
+
+		status = snakemake.snakemake(
+			self.snakefile, 
+			config={'mapq':None, 'kraken_db':None, 'metaphlan_db': None, 'results': None},
+			configfiles = [self.config_file],
+			unlock=True
+		)
+
 		
 	def map(self, verbose):
 
@@ -207,7 +225,7 @@ class workflow:
 			cluster_config = self.cluster_config,
 			drmaa = drmaa,
 			keepgoing = True,
-			jobname = "{wildcards.kraken_db}_{wildcards.mapq}_{wildcards.sample}_{wildcards.state}_{jobid}",
+			jobname = "kraken_biom_{wildcards.kraken_db}_{wildcards.mapq}_{wildcards.state}_{jobid}",
 			shadow_prefix = '/tmp',
 			use_conda=True,
 			conda_frontend='mamba',
