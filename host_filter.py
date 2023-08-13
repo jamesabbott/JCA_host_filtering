@@ -45,7 +45,6 @@ def cli():
 def unlock():
 	wf.unlock()
 
-
 @cli.group()
 def genome():
 	pass

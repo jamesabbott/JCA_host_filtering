@@ -225,7 +225,6 @@ class workflow:
 			cluster_config = self.cluster_config,
 			drmaa = drmaa,
 			keepgoing = True,
-			jobname = "kraken_biom_{wildcards.kraken_db}_{wildcards.mapq}_{wildcards.state}_{jobid}",
 			shadow_prefix = '/tmp',
 			use_conda=True,
 			conda_frontend='mamba',
