@@ -26,25 +26,17 @@
 	"classify_kraken":
 	{
 		"jc": "short",
-		"mem_free": "128G",
+		"mem_free": "150G",
 		"threads": "16",
 		"local_free": "20G",
 		"ramdisk": "0G"
 	},
-	"kraken_nomapq":
+	"classify_kraken_unfiltered":
 	{
 		"jc": "short",
-		"mem_free": "156G",
+		"mem_free": "150G",
 		"threads": "16",
-		"local_free": "0G",
-		"ramdisk": "0G"
-	},
-	"kraken_mapq":
-	{
-		"jc": "short",
-		"mem_free": "156G",
-		"threads": "16",
-		"local_free": "0G",
+		"local_free": "20G",
 		"ramdisk": "0G"
 	}
 }

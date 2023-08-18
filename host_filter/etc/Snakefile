@@ -64,8 +64,11 @@ METAPHLAN=expand("metaphlan/{metaphlan_db}/{mapq}/{sample}_{state}.{suffix}",
 KRAKEN=expand("kraken/{kraken_db}/mapq_{mapq}/{sample}_{state}.{suffix}", 
 	kraken_db=KRAKEN_DB, mapq=MAPQ, sample=SAMPLES, state=STATE, suffix=KRAKEN_SUFFIX) 
 
+KRAKEN_UNFILTERED=expand("kraken/{kraken_db}/unfiltered/{sample}.{suffix}",
+	kraken_db=KRAKEN_DB, sample=SAMPLES, suffix=KRAKEN_SUFFIX)
+
 KRAKEN_BIOM=expand("kraken/{kraken_db}/biom/{mapq}.biom", 
-	kraken_db=KRAKEN_DB, mapq=MAPQ, state=STATE)
+	kraken_db=KRAKEN_DB, mapq=MAPQ, state=STATE) + expand("kraken/{kraken_db}/biom/unfiltered.biom", kraken_db=KRAKEN_DB)
 
 ################################################################################
 #
@@ -168,23 +171,41 @@ kraken2 --db {params.db_path} --threads {threads} --use-names --report kraken/{w
 		--output kraken/{wildcards.kraken_db}/{wildcards.mapq}/{wildcards.sample}_{wildcards.state}.txt --gzip-compressed --paired {input.r1} {input.r2}
 """
 
+rule classify_kraken_unfiltered:
+	message: "Classifying {wildcards.sample} with kraken against {wildcards.kraken_db}..."
+	input:
+		r1 = "fastq/{sample}_1.fq.gz",
+		r2 = "fastq/{sample}_2.fq.gz"
+	output: 
+		txt = "kraken/{kraken_db}/unfiltered/{sample}.txt",
+		report = "kraken/{kraken_db}/unfiltered/{sample}.report.txt"
+	params:
+		db_path=f"{db_path}/{config['kraken_db']}"
+	log: "logs/kraken_{kraken_db}_unfiltered_{sample}.log"
+	shadow: config['shadow']
+	threads: 16
+	conda: "kraken.yaml"
+	shell:"""
+kraken2 --db {params.db_path} --threads {threads} --use-names --report kraken/{wildcards.kraken_db}/unfiltered/{wildcards.sample}.report.txt \
+		--output kraken/{wildcards.kraken_db}/unfiltered/{wildcards.sample}.txt --gzip-compressed --paired {input.r1} {input.r2}
+"""
+
 rule kraken_biom:
-	input: expand("kraken/{kraken_db}/{mapq}/{sample}_{state}.report.txt", kraken_db=KRAKEN_DB, mapq=MAPQ, sample=SAMPLES, state=STATE)
-	output: expand("kraken/{kraken_db}/biom/{mapq}.biom",kraken_db=KRAKEN_DB, mapq=MAPQ)
-	#log: "logs/kraken_biom_{kraken_db}_{mapq}.log"
+	input: expand("kraken/{kraken_db}/{mapq}/{sample}_{state}.report.txt", kraken_db=KRAKEN_DB, mapq=MAPQ, sample=SAMPLES, state=STATE) + 
+			expand("kraken/{kraken_db}/unfiltered/{sample}.report.txt", kraken_db=KRAKEN_DB, sample=SAMPLES)
+	output: expand("kraken/{kraken_db}/biom/{mapq}.biom",kraken_db=KRAKEN_DB, mapq=MAPQ) + \
+			expand("kraken/{kraken_db}/biom/unfiltered.biom", kraken_db=KRAKEN_DB)
 	params:
 		kraken_db=KRAKEN_DB
 	shadow: config['shadow']
 	threads: 1
 	conda: "kraken.yaml"
 	shell:"""
-	pwd
-	for mapq_dir in $(ls kraken/{params.kraken_db}|grep -v biom); do
-			echo "mapq_dir=${{mapq_dir}}"
+	for mapq_dir in $(ls kraken/{params.kraken_db}|grep mapq); do
 			mapq=$(basename ${{mapq_dir}}|sed 's/mapq_//')
-			echo "mapq=${{mapq}}"
 			files=$(ls kraken/{params.kraken_db}/${{mapq_dir}}/*.report.txt)
-			echo "files=${{files[@]}}"
-			kraken-biom --fmt json -o kraken/{params.kraken_db}/biom/${{mapq_dir}}.biom ${{files[@]}}
+			kraken-biom --fmt json -o kraken/{params.kraken_db}/biom/${{mapq_dir}}.biom ${{files[@]}} 
 	done
+	unfiltered_files=$(ls kraken/{params.kraken_db}/unfiltered/*.report.txt)
+	kraken-biom --fmt json -o kraken/{params.kraken_db}/biom/unfiltered.biom ${{unfiltered_files[@]}}
 """

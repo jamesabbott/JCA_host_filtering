@@ -7,8 +7,12 @@ suppressPackageStartupMessages(library(ggh4x))
 suppressPackageStartupMessages(library(ggnewscale))
 suppressPackageStartupMessages(library(ggplot2))
 suppressPackageStartupMessages(library(operators))
+suppressPackageStartupMessages(library(magrittr))
+suppressPackageStartupMessages(library(phyloseq))
 suppressPackageStartupMessages(library(purrr))
+suppressPackageStartupMessages(library(rjson))
 suppressPackageStartupMessages(library(stringr))
+suppressPackageStartupMessages(library(tibble))
 suppressPackageStartupMessages(library(tidyr))
 suppressPackageStartupMessages(library(yaml))
 
@@ -18,16 +22,32 @@ optspec=matrix(c(
 	'flagstat', 'f', '1', 'character', 'Path to summary table of flagstat outputs',
 	'mapping',  'm', '2', 'character', 'Path to mapping file',
 	'group',    'g', '2', 'character', 'Mapping file column to group samples by',
+	'database', 'd', '2', 'character', 'Database name',
 	'help',     'h', '0', 'logical',   'Display help'
 ),byrow=TRUE,ncol=5)
 
 opt=getopt(optspec)
 outdir='analysis/plots'
 
+#TODO: Remove these!
+opt$flagstat<-'analysis/mapping_summary.txt'
+opt$mapping<-'mapping.txt'
+opt$group<-'Microenvironment'
+opt$database<-'kraken_pluspfp'
+
 if (file.exists('config.yaml')) {
 	config=read_yaml('config.yaml')
 } else {
 	cat('config.yaml file not found\n')
+	q(status=1)
+}
+
+if (file.exists('host_filter/etc/genomes.json')) {
+	genomes<-fromJSON(file='host_filter/etc/genomes.json')
+	taxid<-pluck(genomes, config$database, 'taxid')
+	host_species<-pluck(genomes, config$database, 'species')
+} else {
+	cat('etc/genomes.json file not found\n')
 	q(status=1)
 }
 
@@ -146,9 +166,14 @@ read_filtered_stats<-function(mapq) {
 	return(results)
 }
 
+#' Generates beeswarm/boxplot per maqp across range, including unfiltered
+#'
+#' Available mapq data determined by presence of data within mapq_* directory
+#' 
+#' @param mapping_dat: dataframe of mapping data from plot_mappings
+
 plot_filtered_read_counts<-function(mapping_dat) {
-	mapqs=list.files('filtered_fastq/',pattern='mapq_[0-9]+')
-	mapq_mapping_stats<-bind_rows(map(mapqs,read_filtered_stats))# %>%
+	mapq_mapping_stats<-bind_rows(map(mapqs,read_filtered_stats))
 
 	mapq_mapping_stats<-mapq_mapping_stats %>%
 		mutate(mapped_prop=as.numeric(Mapped)/(as.numeric(Mapped)+as.numeric(Unmapped))) %>%
@@ -188,5 +213,159 @@ plot_filtered_read_counts<-function(mapping_dat) {
 		device='pdf', width=15, height=10, units='cm', useDingbats=FALSE)
 }
 
+load_biom<-function(db_path, mapq) {
+	biom_path<-paste0(db_path,'/biom/',mapq,'.biom')
+	biom<-import_biom(biom_path)
+	colnames(tax_table(biom))<-c("Kingdom","Phylum","Class","Order","Family","Genus","Species")
+	# clean up taxtable entries to remove k__, c__ etc prefixes
+	tax_table(biom)[, colnames(tax_table(biom))] <- gsub(tax_table(biom)[, colnames(tax_table(biom))], pattern = "[a-z]__", replacement = "")
+
+	return(biom)
+}
+
+load_bioms<-function(database) {
+	db_path=paste0((str_split_1(database,'_'))[1],'/',database)
+	mapqs=list.files(db_path,pattern='mapq_[0-9]+')
+	mapqs<-append(mapqs,c('unfiltered'))
+
+	# TODO: check modtimes to reread bioms if newer than RDS file...
+	if (file.exists(paste0(db_path,'/bioms.dat'))) {
+		ps_objs<-readRDS(paste0(db_path,'/bioms.dat'))
+	} else {
+		ps_objs<-set_names(mapqs) %>% 
+			map(~load_biom(.x, db_path=db_path), .progress="Loading biom files...")
+		
+		saveRDS(ps_objs,file=paste0(db_path,'/bioms.dat'))
+	}
+
+	return(ps_objs)
+}
+
+get_residual_host<-function(mapq, ps_objs) {
+	ps<-ps_objs[[mapq]]
+	
+	genus<-str_split_1(host_species, ' ')[[1]]
+	species<-str_split_1(host_species, ' ')[[2]]
+
+	# This is evil due to how subset_taxa passes input onto subset...
+	expr <- substitute(subset_taxa(ps, Genus == genus_val & Species == species_val), 
+		list(species_val = species, genus_val = genus))
+	host<-eval(expr)
+
+
+	if (mapq=='unfiltered') {
+		
+		host_counts<-otu_table(host) %>%
+			as.data.frame() %>%
+			rename_with(str_replace, pattern='.report',replacement='') %>%
+			t() %>%
+			as.data.frame() %>%
+			rownames_to_column('Sample') %>%
+			set_colnames(c('Sample','Discarded')) %>%
+			mutate('MapQ'='None') %>%
+			left_join(metadata,join_by('Sample'=='SampleID')) 
+		
+	} else {
+
+		read_counts<-read_filtered_stats(mapq) %>% 
+			mutate(Total = as.numeric(Mapped)+as.numeric(Unmapped))
+	
+		mapped_samples<-sample_names(host)[grepl('_mapped', sample_names(host))]
+		unmapped_samples<-sample_names(host)[grepl('_unmapped', sample_names(host))]
+	
+		expr<-substitute(subset_samples(host, Id %in% mapped_val),
+					   list(mapped_val = mapped_samples))
+	
+		mapped_host_counts<-otu_table(eval(expr)) %>%
+			as.data.frame() %>%
+			rename_with(str_replace, pattern='_mapped.report',replacement='') %>%
+			t() %>%
+			as.data.frame() %>%
+			rownames_to_column('Sample') %>%
+			set_colnames(c('Sample','Discarded')) 
+	
+		expr<-substitute(subset_samples(host, Id %in% unmapped_val),
+					list(unmapped_val = unmapped_samples))
+	
+		unmapped_host_counts<-otu_table(eval(expr)) %>%
+			as.data.frame() %>%
+			rename_with(str_replace, pattern='_unmapped.report',replacement='') %>%
+			t() %>%
+			as.data.frame() %>%
+			rownames_to_column('Sample') %>%
+			set_colnames(c('Sample','Retained')) 
+	
+		host_counts<-left_join(mapped_host_counts,unmapped_host_counts, by='Sample') %>%
+			mutate('MapQ'=str_replace(mapq,'mapq_','')) %>%
+			left_join(metadata,join_by('Sample'=='SampleID')) 
+		} 
+	  
+	return(host_counts)
+}
+
+plot_residual_host<-function(ps_objs, host_species) {	
+
+	mapq_labels=unlist(map(mapqs, ~str_replace(.x, 'mapq_','')))
+	mapq_labels=c('None',mapq_labels)
+	mapqs<-append(mapqs,'unfiltered')
+
+	host_counts<-bind_rows(map(mapqs, ~get_residual_host(.x, ps_objs))) %>%
+		arrange(MapQ,.data[[opt$group]]) %>%
+		mutate(Sample=factor(Sample,levels=unique(Sample))) %>%
+		pivot_longer(cols=c('Discarded','Retained'),names_to = 'Status', values_to = 'Count')
+	
+	host_counts$MapQ<-factor(host_counts$MapQ,levels=mapq_labels)
+	
+	residual_host_plot<-ggplot(host_counts)+
+		geom_beeswarm(aes(x=MapQ,y=Count,colour=Status),dodge.width=0.7)+
+		geom_boxplot(aes(x=MapQ,y=Count,colour=Status),position=position_dodge2(width=0.7),alpha=0.1,linewidth=0.2,notch=TRUE) +
+		facet_wrap(~.data[[opt$group]]) +
+		theme_bw()+
+		ggtitle(paste0(str_to_title(config['database']), ' genome content across mapping quality range')) +
+		xlab('MapQ Threshold') +
+		ylab('Number of Host Genome Reads') +
+		theme(plot.title=element_text(size=10),
+			axis.text.x=element_text(size=6),
+			axis.text.y=element_text(size=6),
+			axis.title=element_text(size=8),
+			legend.title=element_text(size=6),
+			legend.text=element_text(size=4),
+			legend.position='bottom',
+			strip.background = element_rect(fill='white'))+
+		scale_colour_manual(values=cbPalette)
+
+	ggsave(residual_host_plot, file=paste0(outdir,'/residual_host.pdf'), 
+		device='pdf', width=15, height=10, units='cm', useDingbats=FALSE)
+	
+	host_counts<-host_counts %>%
+		pivot_wider(names_from=Status, values_from = c('Count')) %>%
+		filter(MapQ != 'None') %>%
+		mutate('Proportion' = Discarded / (Discarded + Retained)) 
+	
+	residual_host_proportion_plot<-ggplot(host_counts)+
+		geom_beeswarm(aes(x=MapQ,y=Proportion,colour=.data[[opt$group]]),dodge.width=0.7,corral="wrap", corral.width=0.5)+
+		geom_boxplot(aes(x=MapQ,y=Proportion,colour=.data[[opt$group]]),position=position_dodge(width=0.6),alpha=0.8,linewidth=0.2,notch=FALSE) +
+		theme_bw()+
+		ggtitle(paste0(str_to_title(config['database']),' genome proportion discarded across mapping quality range')) +
+		xlab('MapQ Threshold') +
+		ylab('Proportion') +
+		theme(plot.title=element_text(size=10),
+				axis.text.x=element_text(size=6),
+				axis.text.y=element_text(size=6),
+				axis.title=element_text(size=8),
+				legend.title=element_text(size=6),
+				legend.text=element_text(size=4),
+				legend.position='bottom')+
+		scale_colour_manual(values=cbPalette)
+	
+	ggsave(residual_host_proportion_plot, file=paste0(outdir,'/residual_host_proportion.pdf'), 
+		device='pdf', width=15, height=10, units='cm', useDingbats=FALSE)
+		
+}
+
+mapqs=list.files('filtered_fastq/',pattern='mapq_[0-9]+')
+ps_objs<-load_bioms(opt$database)
 mapping_dat<-plot_mappings()
 plot_filtered_read_counts(mapping_dat)
+plot_residual_host(ps_objs, host_species)
+
