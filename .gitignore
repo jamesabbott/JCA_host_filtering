@@ -21,3 +21,8 @@ classification_databases
 metaphlan
 analysis
 *DS_Store
+.Rproj.user
+.RData
+.Rhistory
+._*
+._.*
