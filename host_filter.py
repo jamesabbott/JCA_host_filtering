@@ -28,7 +28,7 @@ def validate_range(ctx,param,value):
 @click.group()
 def cli():
 	makedirs('logs',exist_ok=True)
-	logname=Path(f'logs/host_filter.log')
+	logname=Path('logs/host_filter.log')
 
 	logging.basicConfig(
 		filename=logname,
