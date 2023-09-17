@@ -1,6 +1,7 @@
 #!/bin/env Rscript
 
 suppressPackageStartupMessages(library(dplyr))
+suppressPackageStartupMessages(library(forcats))
 suppressPackageStartupMessages(library(getopt))
 suppressPackageStartupMessages(library(ggbeeswarm))
 suppressPackageStartupMessages(library(ggh4x))
@@ -14,6 +15,7 @@ suppressPackageStartupMessages(library(rjson))
 suppressPackageStartupMessages(library(stringr))
 suppressPackageStartupMessages(library(tibble))
 suppressPackageStartupMessages(library(tidyr))
+suppressPackageStartupMessages(library(vegan))
 suppressPackageStartupMessages(library(yaml))
 
 cbPalette <- c("#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7", "#999999")
@@ -73,7 +75,9 @@ if ((is.null(opt$mapping) & !is.null(opt$group)) |
 			if (opt$group %!in% colnames(metadata)) {
 				cat(paste0('Group ',opt$group,' not found in mapping file ',opt$mapping,'\n'))
 				q(status=1)
-			}
+			} else {
+			  metadata[[opt$group]]=factor(metadata[[opt$group]])
+			}			
 		} else {
 			cat(paste0('Mapping file (',opt$mapping,') not found...\n'))
 			q(status=1)
@@ -225,6 +229,7 @@ load_biom<-function(db_path, mapq) {
 
 load_bioms<-function(database) {
 	db_path=paste0((str_split_1(database,'_'))[1],'/',database)
+
 	mapqs=list.files(db_path,pattern='mapq_[0-9]+')
 	mapqs<-append(mapqs,c('unfiltered'))
 
@@ -241,16 +246,23 @@ load_bioms<-function(database) {
 	return(ps_objs)
 }
 
-get_residual_host<-function(mapq, ps_objs) {
+get_residual_host<-function(mapq, ps_objs, eukaryote=FALSE) {
 	ps<-ps_objs[[mapq]]
 	
 	genus<-str_split_1(host_species, ' ')[[1]]
 	species<-str_split_1(host_species, ' ')[[2]]
-
-	# This is evil due to how subset_taxa passes input onto subset...
-	expr <- substitute(subset_taxa(ps, Genus == genus_val & Species == species_val), 
-		list(species_val = species, genus_val = genus))
-	host<-eval(expr)
+	if (isTRUE(eukaryote) ) {
+	  euks<-subset_taxa(ps, Kingdom=='Eukaryota' )
+	  expr<-substitute(subset_taxa(euks, Genus != genus_val & Species != species_val),
+	                         list(species_val = species, genus_val=genus))
+	  other_euks<-eval(expr)
+	  host<-tax_glom(other_euks,taxrank = 'Kingdom')
+	} else {
+  	# This is evil due to how subset_taxa passes input onto subset...
+	  expr <- substitute(subset_taxa(ps, Genus == genus_val & Species == species_val), 
+		  list(species_val = species, genus_val = genus))
+	  host<-eval(expr)
+	}
 
 
 	if (mapq=='unfiltered') {
@@ -278,7 +290,7 @@ get_residual_host<-function(mapq, ps_objs) {
 	
 		mapped_host_counts<-otu_table(eval(expr)) %>%
 			as.data.frame() %>%
-			rename_with(str_replace, pattern='_mapped.report',replacement='') %>%
+			rename_with(str_replace, pattern='_mapped',replacement='') %>%
 			t() %>%
 			as.data.frame() %>%
 			rownames_to_column('Sample') %>%
@@ -289,7 +301,7 @@ get_residual_host<-function(mapq, ps_objs) {
 	
 		unmapped_host_counts<-otu_table(eval(expr)) %>%
 			as.data.frame() %>%
-			rename_with(str_replace, pattern='_unmapped.report',replacement='') %>%
+			rename_with(str_replace, pattern='_unmapped',replacement='') %>%
 			t() %>%
 			as.data.frame() %>%
 			rownames_to_column('Sample') %>%
@@ -298,9 +310,10 @@ get_residual_host<-function(mapq, ps_objs) {
 		host_counts<-left_join(mapped_host_counts,unmapped_host_counts, by='Sample') %>%
 			mutate('MapQ'=str_replace(mapq,'mapq_','')) %>%
 			left_join(metadata,join_by('Sample'=='SampleID')) 
-		} 
-	  
+	} 
+	
 	return(host_counts)
+	
 }
 
 plot_residual_host<-function(ps_objs, host_species) {	
@@ -311,17 +324,27 @@ plot_residual_host<-function(ps_objs, host_species) {
 
 	host_counts<-bind_rows(map(mapqs, ~get_residual_host(.x, ps_objs))) %>%
 		arrange(MapQ,.data[[opt$group]]) %>%
+	  mutate(Type=host_species) %>%
 		mutate(Sample=factor(Sample,levels=unique(Sample))) %>%
 		pivot_longer(cols=c('Discarded','Retained'),names_to = 'Status', values_to = 'Count')
 	
+	euk_counts<-bind_rows(map(mapqs, ~get_residual_host(.x, ps_objs, eukaryote=TRUE))) %>%
+		arrange(MapQ,.data[[opt$group]]) %>%
+	  mutate(Type='Other Eukaryota') %>%
+		mutate(Sample=factor(Sample,levels=unique(Sample))) %>%
+		pivot_longer(cols=c('Discarded','Retained'),names_to = 'Status', values_to = 'Count')
+	
+	host_counts<-bind_rows(host_counts,euk_counts)
+	
 	host_counts$MapQ<-factor(host_counts$MapQ,levels=mapq_labels)
+	host_counts$Type<-factor(host_counts$Type,levels=c(host_species, 'Other Eukaryota'))
 	
 	residual_host_plot<-ggplot(host_counts)+
-		geom_beeswarm(aes(x=MapQ,y=Count,colour=Status),dodge.width=0.7)+
-		geom_boxplot(aes(x=MapQ,y=Count,colour=Status),position=position_dodge2(width=0.7),alpha=0.1,linewidth=0.2,notch=TRUE) +
-		facet_wrap(~.data[[opt$group]]) +
+		geom_beeswarm(aes(x=MapQ,y=Count,colour=Status),size=0.5, dodge.width=1, corral="wrap", corral.width=0.5)+
+		#geom_boxplot(aes(x=MapQ,y=Count,colour=Status),position=position_dodge2(width=0.7),alpha=0.1,linewidth=0.2,notch=TRUE) +
+		facet_grid(Type ~ .data[[opt$group]]) +
 		theme_bw()+
-		ggtitle(paste0(str_to_title(config['database']), ' genome content across mapping quality range')) +
+		ggtitle('Eukaryotic genome content across mapping quality range') +
 		xlab('MapQ Threshold') +
 		ylab('Number of Host Genome Reads') +
 		theme(plot.title=element_text(size=10),
@@ -331,7 +354,8 @@ plot_residual_host<-function(ps_objs, host_species) {
 			legend.title=element_text(size=6),
 			legend.text=element_text(size=4),
 			legend.position='bottom',
-			strip.background = element_rect(fill='white'))+
+			strip.background = element_rect(fill='white'),
+	    strip.text=element_text(size=6))+ 
 		scale_colour_manual(values=cbPalette)
 
 	ggsave(residual_host_plot, file=paste0(outdir,'/residual_host.pdf'), 
@@ -343,8 +367,8 @@ plot_residual_host<-function(ps_objs, host_species) {
 		mutate('Proportion' = Discarded / (Discarded + Retained)) 
 	
 	residual_host_proportion_plot<-ggplot(host_counts)+
-		geom_beeswarm(aes(x=MapQ,y=Proportion,colour=.data[[opt$group]]),dodge.width=0.7,corral="wrap", corral.width=0.5)+
-		geom_boxplot(aes(x=MapQ,y=Proportion,colour=.data[[opt$group]]),position=position_dodge(width=0.6),alpha=0.8,linewidth=0.2,notch=FALSE) +
+		geom_beeswarm(aes(x=MapQ,y=Proportion,colour=.data[[opt$group]]),size=0.5, dodge.width=1,corral="wrap", corral.width=0.5)+
+		#geom_boxplot(aes(x=MapQ,y=Proportion,colour=.data[[opt$group]]),position=position_dodge(width=0.6),alpha=0.8,linewidth=0.2,notch=FALSE) +
 		theme_bw()+
 		ggtitle(paste0(str_to_title(config['database']),' genome proportion discarded across mapping quality range')) +
 		xlab('MapQ Threshold') +
@@ -363,9 +387,72 @@ plot_residual_host<-function(ps_objs, host_species) {
 		
 }
 
+merge_ps<-function(ps_objs) {
+  ps1=NULL
+  
+  for (name in names(ps_objs)) {
+    obj<-ps_objs[[name]]
+    
+    df<-sample_names(obj) %>% 
+      as.data.frame() %>%
+      rename('Sample_ID'='.') %>%
+      mutate(Filter = name) %>%
+      mutate(raw_sample_id=str_split(Sample_ID,'_',simplify=TRUE)[,1]) %>%
+      left_join(metadata,by=join_by('raw_sample_id'=='SampleID')) 
+      
+    row.names(df)=df$Sample_ID
+    
+    
+    sample_data(obj)=df
+    
+    if (is.null(ps1)) {
+      ps1=obj
+    } else {
+      ps2=obj
+      ps1=merge_phyloseq(ps1,otu_table(ps2),sample_data(ps2),tax_table(ps2))
+    }
+  }
+  return(ps1)
+}
+
+plot_alpha<-function(ps) {
+  rich_plot<-plot_richness(ps, color='Filter',shape=opt$group, measures=c('Simpson', 'Shannon')) 
+  rich_plot<-rich_plot+
+    theme_bw()+
+    theme(axis.text.x=element_blank(),
+          axis.ticks.x=element_blank(),
+          plot.background = element_rect(fill='white'),
+          strip.background = element_rect(fill='white'))+
+    ggtitle('Prokaryotic Alpha diversity')+
+    scale_color_manual(values=cbPalette)
+  rich_plot
+}
+
+plot_beta<-function(ps) {
+  ord<-ordinate(ps,"NMDS", distance='bray')
+  
+  df<-data.frame(sample_data(ps))
+  bray_dist<-distance(ps, method='bray')
+  res<-adonis2(bray_dist ~ Filter, data=df, permutations=5000, parallel=4)
+  
+  r2<-res$R2[[1]]
+  pval<-res$`Pr(>F)`[[1]]
+  
+  beta_plot<-plot_ordination(ps,ord,color='Filter',shape=opt$group)
+  beta_plot<-beta_plot+
+    theme_bw()+
+    labs(caption=paste0('PERMANOVA: r2 = ',signif(r2,3),'; p=',signif(pval,4)))
+              
+  beta_plot
+}
+
 mapqs=list.files('filtered_fastq/',pattern='mapq_[0-9]+')
 ps_objs<-load_bioms(opt$database)
+ps<-merge_ps(ps_objs)
+prokaryote_ps<-subset_taxa(ps, Kingdom == 'Bacteria' | Kingdom == 'Archaea')
+
 mapping_dat<-plot_mappings()
 plot_filtered_read_counts(mapping_dat)
 plot_residual_host(ps_objs, host_species)
-
+plot_alpha(prokaryote_ps)
+plot_beta(prokaryote_ps)
