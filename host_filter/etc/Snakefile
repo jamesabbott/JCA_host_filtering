@@ -42,17 +42,21 @@ if type(config.get('mapq'))==str and config.get('mapq') == 'filtered':
 	# for classification jobs, run on all filtered fastq files
 	MAPQ=glob('filtered_fastq/*')
 	MAPQ=[x.replace('filtered_fastq/','') for x in MAPQ]
+	MAPQ.remove('genome_filtered')
 elif type(config.get('mapq'))==int or type(config.get('mapq'))==str or type(config.get('mapq'))==list:
 	# for filtering, mapq is passed as an int, or a list for a range...
 	# we can use these as they are...
 	MAPQ=config.get('mapq')
 else:
-	# otherwise, we don't need MAPQ (mapping...)
 	MAPQ=None
 
 READS=expand("fastq/{sample}_{pair}.fq.gz",sample=SAMPLES, pair=PAIR)
-
+print(MAPQ)
 MAPPINGS=expand("mappings/{sample}.{suffix}", sample=SAMPLES, suffix=['bam','bam.csi','flagstat']) 
+
+FILTERED_FASTQ=expand("filtered_fastq/genome_filtered/{sample}_{state}_{pair}.fq.gz",
+	sample=SAMPLES, state=STATE, pair=PAIR) + \
+	expand("filtered_fastq/genome_filtered/{sample}_stats.txt", sample=SAMPLES)
 
 MAPQ_FILTERED_FASTQ=expand("filtered_fastq/mapq_{mapq}/{sample}_{state}_{pair}.fq.gz", 
 	mapq=MAPQ, sample=SAMPLES, state=STATE, pair=PAIR) + \
@@ -67,6 +71,9 @@ KRAKEN=expand("kraken/{kraken_db}/mapq_{mapq}/{sample}_{state}.{suffix}",
 KRAKEN_UNFILTERED=expand("kraken/{kraken_db}/unfiltered/{sample}_unfiltered.{suffix}",
 	kraken_db=KRAKEN_DB, sample=SAMPLES, suffix=KRAKEN_SUFFIX)
 
+KRAKEN_GENOME_FILTERED=expand("kraken/{kraken_db}/genome_filtered/{sample}_{state}.{suffix}",
+	kraken_db=KRAKEN_DB, sample=SAMPLES, state=STATE, suffix=KRAKEN_SUFFIX)
+
 KRAKEN_BIOM=expand("kraken/{kraken_db}/biom/{mapq}.biom", 
 	kraken_db=KRAKEN_DB, mapq=MAPQ, state=STATE) + expand("kraken/{kraken_db}/biom/unfiltered.biom", kraken_db=KRAKEN_DB)
 
@@ -76,8 +83,10 @@ KRAKEN_BIOM=expand("kraken/{kraken_db}/biom/{mapq}.biom",
 #
 ################################################################################
 
+ruleorder: classify_kraken_genome_filtered > classify_kraken
+
 rule mappings:
-	input: MAPPINGS
+	input: FILTERED_FASTQ 
 
 rule mapq_filter:
 	input: MAPQ_FILTERED_FASTQ
@@ -86,7 +95,7 @@ rule metaphlan:
 	input: METAPHLAN
 
 rule kraken:
-	input: KRAKEN_BIOM
+	input: KRAKEN_GENOME_FILTERED + KRAKEN_BIOM
 
 rule map:
 	message: "Mapping sample {wildcards.sample} with BWA..."
@@ -110,6 +119,32 @@ bwa mem -t {threads} -M {params.bwa_index_name} {input.R1} {input.R2} 2> {log} \
   | samtools sort -@ {threads} --write-index -o mappings/{wildcards.sample}.bam -
 samtools flagstat mappings/{wildcards.sample}.bam > mappings/{wildcards.sample}.flagstat
 """
+
+rule separate_mapped:
+	message: "Splitting {wildcards.sample} mapped reads to filtered/unfiltered fastq files"
+	input: 
+		bam   = "mappings/{sample}.bam",
+		index = "mappings/{sample}.bam.csi",
+		flagstat = "mappings/{sample}.flagstat"
+	output:
+		r1 = "filtered_fastq/genome_filtered/{sample}_unmapped_1.fq.gz", 
+		r2 = "filtered_fastq/genome_filtered/{sample}_unmapped_2.fq.gz",
+		r3 = "filtered_fastq/genome_filtered/{sample}_mapped_1.fq.gz",
+		r4 = "filtered_fastq/genome_filtered/{sample}_mapped_2.fq.gz",
+		stats = "filtered_fastq/genome_filtered/{sample}_stats.txt",
+	log: "logs/filter_{sample}_genome_filtered"
+	shadow: config['shadow']
+	threads: 4
+	shell: """
+	samtools fastq -@ 4 -f 12 -1 {output.r1} -2 {output.r2} {input.bam}
+	samtools fastq -@ 4 -f 3 -1 {output.r3} -2 {output.r4} {input.bam}
+	mapped_lines=$(zcat {output.r3}|wc -l)
+	unmapped_lines=$(zcat {output.r1}|wc -l)
+	mapped_count=$(($mapped_lines/4))
+	unmapped_count=$(($unmapped_lines/4))
+	echo -e "Mapped\t$mapped_count" > {output.stats}
+	echo -e "Unmapped\t$unmapped_count" >> {output.stats}
+	"""
 
 rule read_mapq_filter:
 	message: "Filtering {wildcards.sample} mappings to MAPQ {wildcards.mapq}..."
@@ -190,11 +225,40 @@ kraken2 --db {params.db_path} --threads {threads} --use-names --report kraken/{w
 		--output kraken/{wildcards.kraken_db}/unfiltered/{wildcards.sample}_unfiltered.txt --gzip-compressed --paired {input.r1} {input.r2}
 """
 
+rule classify_kraken_genome_filtered:
+	message: "Classifying {wildcards.sample} with kraken against {wildcards.kraken_db}..."
+	input:
+		r1 = "filtered_fastq/genome_filtered/{sample}_unmapped_1.fq.gz", 
+		r2 = "filtered_fastq/genome_filtered/{sample}_unmapped_2.fq.gz",
+		r3 = "filtered_fastq/genome_filtered/{sample}_mapped_1.fq.gz",
+		r4 = "filtered_fastq/genome_filtered/{sample}_mapped_2.fq.gz",
+	output: 
+		mapped_txt = "kraken/{kraken_db}/genome_filtered/{sample}_mapped.txt",
+		mapped_report = "kraken/{kraken_db}/genome_filtered/{sample}_mapped.report.txt",
+		unmapped_txt = "kraken/{kraken_db}/genome_filtered/{sample}_unmapped.txt",
+		unmapped_report = "kraken/{kraken_db}/genome_filtered/{sample}_unmapped.report.txt"
+	params:
+		db_path=f"{db_path}/{config['kraken_db']}"
+	log: "logs/kraken_{kraken_db}_genome_filtered_{sample}.log"
+	shadow: config['shadow']
+	threads: 16
+	conda: "kraken.yaml"
+	shell:"""
+kraken2 --db {params.db_path} --threads {threads} --use-names --report kraken/{wildcards.kraken_db}/genome_filtered/{wildcards.sample}_unmapped.report.txt \
+		--output kraken/{wildcards.kraken_db}/genome_filtered/{wildcards.sample}_unmapped.txt --gzip-compressed --paired {input.r1} {input.r2}
+kraken2 --db {params.db_path} --threads {threads} --use-names --report kraken/{wildcards.kraken_db}/genome_filtered/{wildcards.sample}_mapped.report.txt \
+		--output kraken/{wildcards.kraken_db}/genome_filtered/{wildcards.sample}_mapped.txt --gzip-compressed --paired {input.r3} {input.r4}
+"""
+
 rule kraken_biom:
 	input: expand("kraken/{kraken_db}/{mapq}/{sample}_{state}.report.txt", kraken_db=KRAKEN_DB, mapq=MAPQ, sample=SAMPLES, state=STATE) + 
-			expand("kraken/{kraken_db}/unfiltered/{sample}_unfiltered.report.txt", kraken_db=KRAKEN_DB, sample=SAMPLES)
+			expand("kraken/{kraken_db}/unfiltered/{sample}_unfiltered.report.txt", kraken_db=KRAKEN_DB, sample=SAMPLES) +
+			expand("kraken/{kraken_db}/genome_filtered/{sample}_{state}.report.txt", kraken_db=KRAKEN_DB, sample=SAMPLES, state=STATE)
 	output: expand("kraken/{kraken_db}/biom/{mapq}.biom",kraken_db=KRAKEN_DB, mapq=MAPQ) + \
-			expand("kraken/{kraken_db}/biom/unfiltered.biom", kraken_db=KRAKEN_DB)
+			expand("kraken/{kraken_db}/biom/unfiltered.biom", kraken_db=KRAKEN_DB) + \
+			expand("kraken/{kraken_db}/biom/mapped.biom", kraken_db=KRAKEN_DB) + \
+			expand("kraken/{kraken_db}/biom/unmapped.biom", kraken_db=KRAKEN_DB)
+
 	params:
 		kraken_db=KRAKEN_DB
 	shadow: config['shadow']
@@ -209,15 +273,41 @@ rule kraken_biom:
 				cp $file $TMPDIR/$new
 			done
 			files=$(ls $TMPDIR/*txt)
-			echo ${{files[@]}}
+			echo $mapq: ${{files[@]}}
 			kraken-biom --fmt json -o kraken/{params.kraken_db}/biom/${{mapq_dir}}.biom ${{files[@]}} 
+			ls -l kraken/{params.kraken_db}/biom
+			rm $TMPDIR/*
 	done
-	rm $TMPDIR/*txt
+
 	unfiltered_files=$(ls kraken/{params.kraken_db}/unfiltered/*.report.txt)
 	for file in ${{unfiltered_files[@]}}; do
-		new=$(basename $file|sed 's/report/unfiltered/')
+		new=$(basename $file|sed 's/report//')
 		cp $file $TMPDIR/$new
 	done
 	unfiltered_files=$(ls $TMPDIR/*txt)
+	echo unfiltered: ${{unfiltered_files[@]}}
 	kraken-biom --fmt json -o kraken/{params.kraken_db}/biom/unfiltered.biom ${{unfiltered_files[@]}}
+	ls -l kraken/{params.kraken_db}/biom
+
+	rm $TMPDIR/*txt
+	unmapped_files=$(ls kraken/{params.kraken_db}/genome_filtered/*_unmapped.report.txt)
+	for file in ${{unmapped_files[@]}}; do
+		new=$(basename $file|sed 's/report//')
+		cp $file $TMPDIR/$new
+	done
+	unmapped_files=$(ls $TMPDIR/*txt)
+	echo unmapped: ${{unmapped_files[@]}}
+	kraken-biom --fmt json -o kraken/{params.kraken_db}/biom/unmapped.biom ${{unmapped_files[@]}}
+	ls -l kraken/{params.kraken_db}/biom
+
+	rm $TMPDIR/*txt
+	mapped_files=$(ls kraken/{params.kraken_db}/genome_filtered/*_mapped.report.txt)
+	for file in ${{mapped_files[@]}}; do
+		new=$(basename $file|sed 's/report//')
+		cp $file $TMPDIR/$new
+	done
+	mapped_files=$(ls $TMPDIR/*txt)
+	echo mapped: ${{mapped_files[@]}}
+	kraken-biom --fmt json -o kraken/{params.kraken_db}/biom/mapped.biom ${{mapped_files[@]}}
+	ls -l kraken/{params.kraken_db}/biom
 """
