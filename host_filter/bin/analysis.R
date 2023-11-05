@@ -77,7 +77,8 @@ if ((is.null(opt$mapping) & !is.null(opt$group)) |
 				q(status=1)
 			} else {
 			  metadata[[opt$group]]=factor(metadata[[opt$group]])
-			}			
+			}	
+			
 		} else {
 			cat(paste0('Mapping file (',opt$mapping,') not found...\n'))
 			q(status=1)
@@ -89,7 +90,8 @@ if (!dir.exists(outdir)) {
 	dir.create(outdir)
 }
 
-#' Plots proportion of mapped/unmapped read per sample
+#' plot_mappings: 
+#' plots proportion of mapped/unmapped read per sample
 #' 
 #' If a mapping file and group are specified, samples will be 
 #' grouped and indicated in the x-axis margin
@@ -145,6 +147,7 @@ plot_mappings<-function() {
 	return(mapping_dat)
 }
 
+#' read_filtered_stats: 
 #' Reads per-sample mapping counts for a given mapq directory
 #' 
 #' @param mapq: mapq directory name
@@ -170,6 +173,7 @@ read_filtered_stats<-function(mapq) {
 	return(results)
 }
 
+#' plot_filtered_read_counts:
 #' Generates beeswarm/boxplot per maqp across range, including unfiltered
 #'
 #' Available mapq data determined by presence of data within mapq_* directory
@@ -217,6 +221,14 @@ plot_filtered_read_counts<-function(mapping_dat) {
 		device='pdf', width=15, height=10, units='cm', useDingbats=FALSE)
 }
 
+#' load_biom:
+#' imports biom format results for a defined mapq output
+#' 
+#' @param db_path: path to database
+#' @param mapq: mapq data set to load
+#' 
+#' @return biom phyloseq object
+
 load_biom<-function(db_path, mapq) {
 	biom_path<-paste0(db_path,'/biom/',mapq,'.biom')
 	biom<-import_biom(biom_path)
@@ -226,6 +238,17 @@ load_biom<-function(db_path, mapq) {
 
 	return(biom)
 }
+
+#' load_bioms:
+#' iterates through all mapq filtered outputs to read each into a ps 
+#' object with `load_biom()`, resulting in a vector of ps objects. 
+#' This is serialiased to an RDS file ('bioms.dat') in the database
+#' directory. Should the RDS file already exist, this will be read
+#' instead of the individual biom objects
+#' 
+#' @param database - path to database direcotry
+#' 
+#' @return ps-objs - vector of phyloseq objects
 
 load_bioms<-function(database) {
 	db_path=paste0((str_split_1(database,'_'))[1],'/',database)
@@ -246,15 +269,28 @@ load_bioms<-function(database) {
 	return(ps_objs)
 }
 
+#' get_residual_host:
+#' Determines read counts for host genome retained following filtering
+#' 
+#' @param mapq: mapping quality filter to process
+#' @param ps_objs: vector of phyloseq objects
+#' @param eukaryote: boolean to determine wether to obtain host genome 
+#' or all eukaryotic sequences
+#'
+#' @return host_counts: dataframe of Sample, Discarded read count,
+#' Retained read count, MapQ and grouping variable
+
 get_residual_host<-function(mapq, ps_objs, eukaryote=FALSE) {
+
 	ps<-ps_objs[[mapq]]
 	
 	genus<-str_split_1(host_species, ' ')[[1]]
 	species<-str_split_1(host_species, ' ')[[2]]
+
 	if (isTRUE(eukaryote) ) {
 	  euks<-subset_taxa(ps, Kingdom=='Eukaryota' )
 	  expr<-substitute(subset_taxa(euks, Genus != genus_val & Species != species_val),
-	                         list(species_val = species, genus_val=genus))
+							 list(species_val = species, genus_val=genus))
 	  other_euks<-eval(expr)
 	  host<-tax_glom(other_euks,taxrank = 'Kingdom')
 	} else {
@@ -264,7 +300,8 @@ get_residual_host<-function(mapq, ps_objs, eukaryote=FALSE) {
 	  host<-eval(expr)
 	}
 
-
+	# unfiltered results need handling differently since we don't have any 
+	# discarded  reads
 	if (mapq=='unfiltered') {
 		
 		host_counts<-otu_table(host) %>%
@@ -275,6 +312,7 @@ get_residual_host<-function(mapq, ps_objs, eukaryote=FALSE) {
 			rownames_to_column('Sample') %>%
 			set_colnames(c('Sample','Discarded')) %>%
 			mutate('MapQ'='None') %>%
+			mutate(Sample = str_replace(Sample, "_unfiltered.", "")) %>%
 			left_join(metadata,join_by('Sample'=='SampleID')) 
 		
 	} else {
@@ -290,11 +328,13 @@ get_residual_host<-function(mapq, ps_objs, eukaryote=FALSE) {
 	
 		mapped_host_counts<-otu_table(eval(expr)) %>%
 			as.data.frame() %>%
-			rename_with(str_replace, pattern='_mapped',replacement='') %>%
+			rename_with(str_replace, pattern='_mapped', replacement='') %>%
 			t() %>%
 			as.data.frame() %>%
 			rownames_to_column('Sample') %>%
-			set_colnames(c('Sample','Discarded')) 
+			set_colnames(c('Sample','Discarded')) %>%
+			mutate('MapQ'=str_replace(mapq,'mapq_','')) %>%
+			mutate(Sample = str_replace(Sample, ".[0-9]*$", ""))
 	
 		expr<-substitute(subset_samples(host, Id %in% unmapped_val),
 					list(unmapped_val = unmapped_samples))
@@ -305,16 +345,25 @@ get_residual_host<-function(mapq, ps_objs, eukaryote=FALSE) {
 			t() %>%
 			as.data.frame() %>%
 			rownames_to_column('Sample') %>%
-			set_colnames(c('Sample','Retained')) 
-	
-		host_counts<-left_join(mapped_host_counts,unmapped_host_counts, by='Sample') %>%
+			set_colnames(c('Sample','Retained')) %>%
 			mutate('MapQ'=str_replace(mapq,'mapq_','')) %>%
-			left_join(metadata,join_by('Sample'=='SampleID')) 
-	} 
+			mutate(Sample = str_replace(Sample, ".[0-9]*$", ""))
 	
+		host_counts<-left_join(mapped_host_counts, unmapped_host_counts, join_by('Sample','MapQ')) %>%
+			left_join(metadata,join_by('Sample' == 'SampleID')) 
+	}
 	return(host_counts)
 	
 }
+
+#' plot_residual_host:
+#' produces plots of host reads remaining in the samples following
+#' mapq filtering, including all ps objects if provided list
+#' 
+#' Plots of both absolute and relative values are created
+#' 
+#' @param ps_objs: list of phyloseq objects
+#' @param host_species: name of host organism
 
 plot_residual_host<-function(ps_objs, host_species) {	
 
@@ -322,7 +371,7 @@ plot_residual_host<-function(ps_objs, host_species) {
 	mapq_labels=c('None',mapq_labels)
 	mapqs<-append(mapqs,'unfiltered')
 
-	host_counts<-bind_rows(map(mapqs, ~get_residual_host(.x, ps_objs))) %>%
+	host_counts<-bind_rows(map(mapqs, ~get_residual_host(.x, ps_objs)))  %>%
 		arrange(MapQ,.data[[opt$group]]) %>%
 	  mutate(Type=host_species) %>%
 		mutate(Sample=factor(Sample,levels=unique(Sample))) %>%
@@ -340,8 +389,7 @@ plot_residual_host<-function(ps_objs, host_species) {
 	host_counts$Type<-factor(host_counts$Type,levels=c(host_species, 'Other Eukaryota'))
 	
 	residual_host_plot<-ggplot(host_counts)+
-		geom_beeswarm(aes(x=MapQ,y=Count,colour=Status),size=0.5, dodge.width=1, corral="wrap", corral.width=0.5)+
-		#geom_boxplot(aes(x=MapQ,y=Count,colour=Status),position=position_dodge2(width=0.7),alpha=0.1,linewidth=0.2,notch=TRUE) +
+		geom_beeswarm(aes(x=MapQ,y=Count,colour=Status),size=0.5, dodge.width=1, corral="wrap", corral.width=0.45)+
 		facet_grid(Type ~ .data[[opt$group]]) +
 		theme_bw()+
 		ggtitle('Eukaryotic genome content across mapping quality range') +
@@ -355,7 +403,7 @@ plot_residual_host<-function(ps_objs, host_species) {
 			legend.text=element_text(size=4),
 			legend.position='bottom',
 			strip.background = element_rect(fill='white'),
-	    strip.text=element_text(size=6))+ 
+		strip.text=element_text(size=6))+ 
 		scale_colour_manual(values=cbPalette)
 
 	ggsave(residual_host_plot, file=paste0(outdir,'/residual_host.pdf'), 
@@ -368,7 +416,6 @@ plot_residual_host<-function(ps_objs, host_species) {
 	
 	residual_host_proportion_plot<-ggplot(host_counts)+
 		geom_beeswarm(aes(x=MapQ,y=Proportion,colour=.data[[opt$group]]),size=0.5, dodge.width=1,corral="wrap", corral.width=0.5)+
-		#geom_boxplot(aes(x=MapQ,y=Proportion,colour=.data[[opt$group]]),position=position_dodge(width=0.6),alpha=0.8,linewidth=0.2,notch=FALSE) +
 		theme_bw()+
 		ggtitle(paste0(str_to_title(config['database']),' genome proportion discarded across mapping quality range')) +
 		xlab('MapQ Threshold') +
@@ -387,72 +434,93 @@ plot_residual_host<-function(ps_objs, host_species) {
 		
 }
 
+#' Merges list of phyloseq objects into a single uber-object
+#' 
+#' @param ps_objs: list of phyloseq objects to merge
+#' 
+#' @return ps1: Merged object 
+
 merge_ps<-function(ps_objs) {
-  ps1=NULL
-  
-  for (name in names(ps_objs)) {
-    obj<-ps_objs[[name]]
-    
-    df<-sample_names(obj) %>% 
-      as.data.frame() %>%
-      rename('Sample_ID'='.') %>%
-      mutate(Filter = name) %>%
-      mutate(raw_sample_id=str_split(Sample_ID,'_',simplify=TRUE)[,1]) %>%
-      left_join(metadata,by=join_by('raw_sample_id'=='SampleID')) 
-      
-    row.names(df)=df$Sample_ID
-    
-    
-    sample_data(obj)=df
-    
-    if (is.null(ps1)) {
-      ps1=obj
-    } else {
-      ps2=obj
-      ps1=merge_phyloseq(ps1,otu_table(ps2),sample_data(ps2),tax_table(ps2))
-    }
-  }
-  return(ps1)
+	ps1=NULL
+
+	for (name in names(ps_objs)) {
+	  obj<-ps_objs[[name]]
+	  
+	  df<-sample_names(obj) %>% 
+	    as.data.frame() %>%
+	    rename('Sample_ID'='.') %>%
+	    mutate(Filter = name) %>%
+	    mutate(raw_sample_id=str_split(Sample_ID,'_',simplify=TRUE)[,1]) %>%
+	    left_join(metadata,by=join_by('raw_sample_id'=='SampleID')) 
+	  
+	  row.names(df)=df$Sample_ID
+	  
+	  sample_data(obj)=df
+	  
+	  if (is.null(ps1)) {
+	    ps1=obj
+	  } else {
+	    ps2=obj
+	    ps1=merge_phyloseq(ps1,otu_table(ps2),sample_data(ps2),tax_table(ps2))
+	  }
+	}
+	return(ps1)
 }
 
-plot_alpha<-function(ps) {
-  rich_plot<-plot_richness(ps, color='Filter',shape=opt$group, measures=c('Simpson', 'Shannon')) 
-  rich_plot<-rich_plot+
-    theme_bw()+
-    theme(axis.text.x=element_blank(),
-          axis.ticks.x=element_blank(),
-          plot.background = element_rect(fill='white'),
-          strip.background = element_rect(fill='white'))+
-    ggtitle('Prokaryotic Alpha diversity')+
-    scale_color_manual(values=cbPalette)
-  rich_plot
+#' plot_alpha
+#' produces plots of alpha diversity measures. Simpson and Shannon are plotted 
+#' by default. 
+#' 
+#' Available measures are those supported by phyloseq's plot_richness function
+#' 
+#' @param ps: merged phyloseq object
+#' @param measures: list of measures to plot (default: Simpson and Shannon)
+
+plot_alpha<-function(ps, measures=c('Simpson', 'Shannon')) {
+	rich_plot<-plot_richness(ps, color='Filter',shape=opt$group, measures=measures)
+	rich_plot<-rich_plot+
+	theme_bw()+
+	theme(axis.text.x=element_blank(),
+		  axis.ticks.x=element_blank(),
+		  plot.background = element_rect(fill='white'),
+		  strip.background = element_rect(fill='white'))+
+	ggtitle('Prokaryotic Alpha diversity')+
+	scale_color_manual(values=cbPalette)
+	ggsave(rich_plot, file=paste0(outdir,'/alpha_diversity.pdf'), 
+		device='pdf', width=15, height=10, units='cm', useDingbats=FALSE)
 }
+
+#' plot_beta:
+#' produces plot of beta-diversity, including permanovo results
+#' 
+#' @param ps: merged phyloseq object
 
 plot_beta<-function(ps) {
-  ord<-ordinate(ps,"NMDS", distance='bray')
+	ord<-ordinate(ps,"NMDS", distance='bray')
+
+	df<-data.frame(sample_data(ps))
+	bray_dist<-distance(ps, method='bray')
+	res<-adonis2(bray_dist ~ Filter, data=df, permutations=5000, parallel=4)
+
+	r2<-res$R2[[1]]
+	pval<-res$`Pr(>F)`[[1]]
   
-  df<-data.frame(sample_data(ps))
-  bray_dist<-distance(ps, method='bray')
-  res<-adonis2(bray_dist ~ Filter, data=df, permutations=5000, parallel=4)
-  
-  r2<-res$R2[[1]]
-  pval<-res$`Pr(>F)`[[1]]
-  
-  beta_plot<-plot_ordination(ps,ord,color='Filter',shape=opt$group)
-  beta_plot<-beta_plot+
-    theme_bw()+
-    labs(caption=paste0('PERMANOVA: r2 = ',signif(r2,3),'; p=',signif(pval,4)))
-              
-  beta_plot
+	beta_plot<-plot_ordination(ps,ord,color='Filter',shape=opt$group)
+	beta_plot<-beta_plot+
+	theme_bw()+
+	labs(caption=paste0('PERMANOVA: r2 = ',signif(r2,3),'; p=',signif(pval,4)))
+
+	ggsave(beta_plot, file=paste0(outdir,'/beta_diversity.pdf'), 
+		device='pdf', width=15, height=10, units='cm', useDingbats=FALSE)
 }
 
 mapqs=list.files('filtered_fastq/',pattern='mapq_[0-9]+')
 ps_objs<-load_bioms(opt$database)
 ps<-merge_ps(ps_objs)
 prokaryote_ps<-subset_taxa(ps, Kingdom == 'Bacteria' | Kingdom == 'Archaea')
-
 mapping_dat<-plot_mappings()
 plot_filtered_read_counts(mapping_dat)
 plot_residual_host(ps_objs, host_species)
 plot_alpha(prokaryote_ps)
 plot_beta(prokaryote_ps)
+
